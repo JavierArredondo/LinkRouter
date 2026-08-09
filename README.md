@@ -120,6 +120,8 @@ Implemented: browser and Chromium-profile routing, host/path rules with exact, w
 
 Known gaps:
 
+- Safari profiles are not routable. Safari offers no profile flag, no profile-carrying URL scheme, and no scripting support for profiles, so there is nothing to target without automating its UI.
+
 - Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are covered by manual verification rather than tests.
 
 ## Releasing
