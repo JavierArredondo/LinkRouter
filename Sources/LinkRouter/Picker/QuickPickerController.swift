@@ -19,7 +19,7 @@ final class QuickPickerController: NSObject, NSWindowDelegate {
         hasBeenKey = false
 
         let sections = PickerLayout.sections(for: destinations)
-        let view = QuickPickerView(url: url, sections: sections, message: message, icons: icons(for: destinations)) { [weak self] destination, remember in
+        let view = QuickPickerView(url: url, sections: sections, message: message) { [weak self] destination, remember in
             self?.finish(destination, remember: remember)
         }
 
@@ -72,15 +72,6 @@ final class QuickPickerController: NSObject, NSWindowDelegate {
             x: frame.midX - size.width / 2,
             y: frame.midY - size.height / 2 + frame.height * 0.08
         ))
-    }
-
-    private func icons(for destinations: [Destination]) -> [String: NSImage] {
-        var result: [String: NSImage] = [:]
-        for destination in destinations where result[destination.bundleIdentifier] == nil {
-            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: destination.bundleIdentifier) else { continue }
-            result[destination.bundleIdentifier] = NSWorkspace.shared.icon(forFile: appURL.path)
-        }
-        return result
     }
 
     // MARK: - NSWindowDelegate

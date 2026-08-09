@@ -20,7 +20,7 @@ final class HostedWindowController {
         let hosting = NSHostingView(rootView: content())
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )

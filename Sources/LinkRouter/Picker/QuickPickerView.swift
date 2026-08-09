@@ -5,8 +5,6 @@ struct QuickPickerView: View {
     let url: URL
     let sections: [PickerSection]
     let message: String?
-    /// Resolved once per presentation by the controller; looking icons up per render hits disk.
-    let icons: [String: NSImage]
     let completion: (Destination?, Bool) -> Void
 
     @State private var selected = 0
@@ -116,14 +114,7 @@ struct QuickPickerView: View {
     }
 
     private func icon(for destination: Destination) -> some View {
-        Group {
-            if let image = icons[destination.bundleIdentifier] {
-                Image(nsImage: image).resizable()
-            } else {
-                Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 20, height: 20)
+        DestinationIcon(bundleIdentifier: destination.bundleIdentifier, size: 20)
     }
 
     private var emptyState: some View {

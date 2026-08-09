@@ -18,9 +18,10 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 - **Chrome profiles as first-class destinations** — each profile is discovered from Chrome's own profile list and launched directly, not just "whatever window is frontmost".
 - **Keyboard-first picker** — unmatched links open a borderless panel: digits and arrows select, `↩` opens, `⌘↩` opens *and* remembers the host as a new rule, `esc` cancels.
 - **Preset catalog** — seed rules from a bundled list of common sites in one click. The catalog is plain JSON in the repo ([`Presets/presets.json`](Presets/presets.json)), so adding a site takes a pull request, not Swift.
-- **History-based suggestions** — with local diagnostics enabled, LinkRouter proposes rules for the hosts you actually open.
+- **History** — a searchable log of every link LinkRouter opened, with the destination and the rule that decided it. Query strings are dropped before anything is written, so session tokens and tracking parameters never reach disk.
+- **History-based suggestions** — LinkRouter proposes rules for the hosts that keep reaching the picker.
 - **Fails safe** — a missing or uninstalled destination degrades to the picker; a link is never dropped.
-- **Local-first and private** — no network, no account, no telemetry. Diagnostics are opt-in, stay on disk, and record hosts only — never full URLs or query strings.
+- **Local-first and private** — no network, no account, no telemetry. History stays on your machine, is capped at the last 500 entries, records host and path only — never query strings — and can be turned off or cleared at any time.
 
 ## Install
 
@@ -55,7 +56,7 @@ Open **Settings** either from the menu-bar icon or by launching LinkRouter again
 
 Precedence is exact host → regex → wildcard, with a path condition breaking ties upward. Ties beyond that fall back to rule order, so you rarely have to reorder anything by hand.
 
-Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configuration.json`, `diagnostics.log`). Delete that folder to reset the app to a first-run state.
+Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configuration.json`, `history.jsonl`). Delete that folder to reset the app to a first-run state.
 
 ## Development
 
@@ -70,7 +71,7 @@ bash Scripts/assemble-app.sh           # -> build/LinkRouter.app
 
 ### Architecture
 
-Routing and presentation logic is pure and OS-free; everything touching macOS is an adapter. `Routing/`, `Picker/PickerLayout`, and `Diagnostics/DiagnosticsLog` import only Foundation and are the parts under test.
+Routing and presentation logic is pure and OS-free; everything touching macOS is an adapter. `Routing/`, `Picker/PickerLayout`, and `History/RouteHistoryLog` import only Foundation and are the parts under test.
 
 | Path | Role |
 | --- | --- |
@@ -78,13 +79,13 @@ Routing and presentation logic is pure and OS-free; everything touching macOS is
 | `App/RoutingCoordinator` | The `@MainActor` singleton owning mutable state; queues incoming URLs and processes them one at a time, because the picker is modal. |
 | `Destinations/` | Browser discovery, Chrome profile parsing, default-handler registration, launching. |
 | `Picker/` | Pure layout, the SwiftUI view, and the borderless `NSPanel` lifecycle. |
-| `Persistence/`, `Diagnostics/` | `actor`s for file I/O. |
+| `Persistence/`, `History/` | `actor`s for file I/O; `RouteHistoryLog` holds the pure format and suggestion logic. |
 
 See [CLAUDE.md](CLAUDE.md) for the full set of design invariants — the non-obvious constraints (why an uncompilable regex must match *nothing*, why Chrome profiles are keyed by identity rather than bundle id, why every async path must resume the coordinator exactly once).
 
 ## Status
 
-Implemented: browser and Chrome-profile routing, host/path rules with exact, wildcard and regex matchers, the bundled preset catalog, history-based suggestions, and the picker.
+Implemented: browser and Chrome-profile routing, host/path rules with exact, wildcard and regex matchers, the bundled preset catalog, routing history with suggestions, and the picker.
 
 Known gaps:
 

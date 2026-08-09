@@ -38,11 +38,13 @@ final class RoutingCoordinator: ObservableObject {
     @Published var lastRouted: String = "No links routed yet"
     @Published var handlerStatus = "Checking default handler…"
     @Published private(set) var suggestions: [HostSuggestion] = []
+    @Published private(set) var isDefaultHandler = false
+    @Published private(set) var historyEntries: [HistoryEntry] = []
     private let store = ConfigurationStore()
     private let registry = BrowserRegistry()
     private let launcher = TargetLauncher()
     private let handlerService = DefaultHandlerService()
-    private let diagnostics = Diagnostics()
+    private let history = RouteHistoryStore()
     private lazy var router = Router(ownBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.example.LinkRouter")
     private var queue: [URL] = []
     private var isProcessing = false
@@ -54,6 +56,7 @@ final class RoutingCoordinator: ObservableObject {
 
     func receive(_ urls: [URL]) { queue.append(contentsOf: urls); processNext() }
     func refreshDestinations() {
+        DestinationIcons.invalidate() // An app may have moved or been updated since the last scan.
         let found = registry.discoveredDestinations(excluding: router.ownBundleIdentifier)
         // Keyed by identity, not bundle id: Chrome profiles share one bundle id, and the same app can be
         // registered from two paths. `uniquingKeysWith` because the unique-keys initializer traps on collisions.
@@ -84,14 +87,29 @@ final class RoutingCoordinator: ObservableObject {
         refreshSuggestions()
     }
 
-    func refreshSuggestions() {
+    func refreshHistory() {
         Task {
-            let counts = await diagnostics.hostCounts()
-            self.suggestions = DiagnosticsLog.suggestions(hostCounts: counts, rules: self.configuration.rules, limit: 8)
+            let entries = await history.entries()
+            self.historyEntries = entries.reversed() // Newest first for display.
+            self.suggestions = RouteHistoryLog.suggestions(from: entries, rules: self.configuration.rules, limit: 8)
         }
     }
-    func refreshHandlerStatus() { handlerStatus = handlerService.currentStatus(ownBundleIdentifier: router.ownBundleIdentifier) }
-    var isDefaultWebHandler: Bool { handlerService.isDefaultForWeb(ownBundleIdentifier: router.ownBundleIdentifier) }
+
+    func clearHistory() {
+        Task {
+            await history.clear()
+            self.historyEntries = []
+            self.suggestions = []
+        }
+    }
+
+    func refreshSuggestions() { refreshHistory() }
+    /// Published rather than computed on demand: the settings view reads it on every render, and each
+    /// check is two Launch Services round-trips.
+    func refreshHandlerStatus() {
+        handlerStatus = handlerService.currentStatus(ownBundleIdentifier: router.ownBundleIdentifier)
+        isDefaultHandler = handlerService.isDefaultForWeb(ownBundleIdentifier: router.ownBundleIdentifier)
+    }
 
     func presentSettings() {
         refreshHandlerStatus()
@@ -101,7 +119,8 @@ final class RoutingCoordinator: ObservableObject {
     /// Only on a machine where LinkRouter is not yet the handler — a menu-bar utility that pops a
     /// window on every login is a nuisance.
     func presentOnboardingIfNeeded() {
-        guard !isDefaultWebHandler else { return }
+        refreshHandlerStatus()
+        guard !isDefaultHandler else { return }
         onboardingWindow.show(title: "LinkRouter") { OnboardingView(coordinator: self) }
     }
     func becomeDefaultHandler() {
@@ -117,20 +136,29 @@ final class RoutingCoordinator: ObservableObject {
         let url = queue.removeFirst()
         switch router.decide(url, configuration: configuration, availableBundleIdentifiers: registry.installedBundleIdentifiers()) {
         case .open(let url, let destination, let rule):
-            record(url, outcome: "open destination=\(destination.bundleIdentifier) rule=\(rule?.id.uuidString ?? "default")")
-            launch(url, destination)
+            launch(url, destination, outcome: rule == nil ? .fallback : .rule, ruleName: rule?.name)
         case .ask(let url, let candidates, let issue):
             picker.show(url: url, destinations: candidates, message: issue.map { "The saved destination is unavailable (\($0))." }) { [weak self] destination, remember in
                 guard let self else { return }
-                if let destination { if remember { self.remember(url: url, destination: destination) }; self.launch(url, destination) }
-                else { self.finish() }
+                if let destination {
+                    if remember { self.remember(url: url, destination: destination) }
+                    self.launch(url, destination, outcome: .picker, ruleName: nil)
+                } else {
+                    self.record(url, outcome: .cancelled, destination: nil, ruleName: nil)
+                    self.finish()
+                }
             }
-        case .reject(let url, let error): record(url, outcome: "reject error=\(error)"); lastRouted = "Could not route link: \(error)"; finish()
+        case .reject(let url, let error):
+            record(url, outcome: .rejected, destination: nil, ruleName: nil)
+            lastRouted = "Could not route link: \(error)"
+            finish()
         }
     }
-    private func launch(_ url: URL, _ destination: Destination) {
+    private func launch(_ url: URL, _ destination: Destination, outcome: HistoryOutcome, ruleName: String?) {
         Task {
             let error = await launcher.launch(url, in: destination)
+            // Recorded after the attempt, so the history reflects what happened rather than what was intended.
+            self.record(url, outcome: error == nil ? outcome : .failed, destination: destination, ruleName: ruleName)
             self.lastRouted = error == nil ? "\(url.host() ?? url.absoluteString) → \(destination.displayName)" : "Could not open \(destination.displayName)"
             self.finish()
         }
@@ -139,9 +167,10 @@ final class RoutingCoordinator: ObservableObject {
         guard case .success(let normalized) = URLNormalizer.normalize(url) else { return }
         configuration.rules.append(Rule(name: normalized.host, order: configuration.rules.count, match: RuleMatch(host: normalized.host, hostMode: .exact), targetID: destination.id)); persist()
     }
-    private func record(_ url: URL, outcome: String) {
-        guard configuration.diagnosticsEnabled, let host = url.host()?.lowercased() else { return }
-        Task { await diagnostics.record(host: host, outcome: outcome) }
+    private func record(_ url: URL, outcome: HistoryOutcome, destination: Destination?, ruleName: String?) {
+        guard configuration.isHistoryEnabled else { return }
+        let entry = HistoryEntry.make(url: url, date: Date(), outcome: outcome, destination: destination, ruleName: ruleName)
+        Task { await history.record(entry) }
     }
     private func finish() { isProcessing = false; processNext() }
     private func persist() { let snapshot = configuration; Task { try? await store.save(snapshot) } }

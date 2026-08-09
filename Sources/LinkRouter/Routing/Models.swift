@@ -67,7 +67,12 @@ struct AppConfiguration: Codable, Sendable {
     var askWhenNoMatch: Bool = true
     var rules: [Rule] = []
     var destinations: [Destination] = []
-    var diagnosticsEnabled: Bool = false
+    /// Optional so configurations written before history existed still decode: a non-optional
+    /// property would make them fail, and `ConfigurationStore.load` treats a decode failure as
+    /// corruption and archives the file. Absent means on, which is the shipping default.
+    var historyEnabled: Bool?
+
+    var isHistoryEnabled: Bool { historyEnabled ?? true }
 }
 
 struct NormalizedURL: Equatable, Sendable {

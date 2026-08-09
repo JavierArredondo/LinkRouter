@@ -20,11 +20,11 @@ swift Scripts/generate-presets.swift   # Presets/presets.json -> SitePresets+Gen
 
 macOS will not list LinkRouter in System Settings → Default web browser: that list is filtered to apps handling `public.html` documents. Use the app's own "Use LinkRouter for web links" button, which calls `NSWorkspace.setDefaultApplication` and bypasses the filter. Call it once per scheme sequentially — two concurrent requests race and one reports a spurious failure.
 
-Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configuration.json`, `diagnostics.log`). Delete it to reset to a first-run state.
+Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configuration.json`, `history.jsonl`). Delete it to reset to a first-run state.
 
 ## Architecture
 
-The core rule is that **routing and presentation logic is pure and OS-free; everything that touches macOS is an adapter**. Keep it that way — `Routing/`, `Picker/PickerLayout`, and `Diagnostics/DiagnosticsLog` import only Foundation and are the only parts under test.
+The core rule is that **routing and presentation logic is pure and OS-free; everything that touches macOS is an adapter**. Keep it that way — `Routing/`, `Picker/PickerLayout`, and `History/RouteHistoryLog` import only Foundation and are the only parts under test.
 
 - `Routing/` — `URLNormalizer` (scheme/host validation, lowercasing, percent-encoded path) → `RuleEngine` (matching + precedence) → `Router.decide`, a pure function of `(URL, AppConfiguration, availableBundleIdentifiers)` returning a `RouteDecision` of `.open` / `.ask` / `.reject`. Also `SitePresets` (bundled catalog → generated rules) and `RulePatternValidator` (regex validation at authoring time). No AppKit, no I/O, no singletons.
 - `Presets/presets.json` — the source of truth for the preset catalog, compiled in via `SitePresets+Generated.swift`. `Scripts/generate-presets.swift` regenerates it and CI diffs the result, so the two cannot drift.
@@ -32,7 +32,7 @@ The core rule is that **routing and presentation logic is pure and OS-free; ever
 - `Destinations/` — `BrowserRegistry` (discovers handlers, classifies which are real browsers, expands Chrome profiles), `ChromeProfileRegistry` (parses Chrome's `Local State`), `DefaultHandlerService`, `TargetLauncher`. All `@MainActor`.
 - `Picker/` — `PickerLayout` (pure ordering and numbering), `QuickPickerView` (SwiftUI), `QuickPickerController` (borderless `NSPanel` lifecycle).
 - **`MenuBarExtra` is the only SwiftUI scene.** Settings and onboarding are AppKit `NSWindow`s owned by `HostedWindowController`. The SwiftUI `Settings` and `WindowGroup` scenes were removed because in an `.accessory` app they misbehave: `sendAction(showSettingsWindow:)` returns `true` while no window is ever created, so settings became unreachable. Do not reintroduce them — add windows through the controller instead, and note `isReleasedWhenClosed = false` is what makes a closed window safe to show again.
-- `Persistence/ConfigurationStore` and `Diagnostics/Diagnostics` — `actor`s for file I/O, called from the coordinator via `Task`.
+- `Persistence/ConfigurationStore` and `History/RouteHistoryStore` — `actor`s for file I/O, called from the coordinator via `Task`.
 
 ### Invariants that carry design intent
 
@@ -53,11 +53,14 @@ The core rule is that **routing and presentation logic is pure and OS-free; ever
 - **Uninstalled browsers are retained** in `configuration.destinations` so existing rules stay repairable instead of silently breaking.
 - **Corrupt config is moved aside**, not deleted: renamed to `configuration.corrupt-<epoch>.json`, returning defaults.
 - **The preset catalog is generated, not parsed at launch.** `Presets/presets.json` exists so a preset can be contributed without writing Swift, but reading it at runtime would put a bundle lookup, file I/O and a decode failure into `Routing/`, which is the layer that must stay pure — and would mean shipping a catalog that can arrive empty. The generator validates instead: unknown modes, duplicate ids or hosts, uncompilable regexes, and a wildcard missing its leading `*.` all fail the build rather than becoming a dead rule in a user's configuration. **Never hand-edit `SitePresets+Generated.swift`**; CI regenerates and runs `git diff --exit-code`.
-- **Diagnostics are opt-in and host-only** (no full URLs, no query strings) and must never interrupt routing — errors there are swallowed by design. History-based rule suggestions read that log, so they are empty until the user enables it.
+- **History records host and path, never the query string.** It is stripped in `HistoryEntry.make` on the way in rather than hidden on the way out, because query strings carry session tokens, password-reset links and tracking parameters. Do not "improve" this by storing the full URL.
+- **History is on by default** (`AppConfiguration.historyEnabled` is `Bool?`, absent meaning on). It must never interrupt routing — write errors are swallowed by design — and it is the single source for rule suggestions, which are derived from entries whose outcome is `.picker` or `.fallback`.
+- **`history.jsonl` is one JSON object per line** so appending is cheap; it overshoots the 500-entry cap and is compacted in batches. A line that fails to parse is skipped rather than failing the read, so an interrupted write costs one entry instead of the whole history.
+- **The history outcome is recorded after the launch attempt**, so a destination that refused to open is logged as `.failed` rather than as a success.
 
 ## Testing
 
-`Tests/LinkRouterTests/` covers the pure layer via `@testable import`: rule matching and precedence, Chrome profile parsing, picker layout, regex semantics, preset de-duplication, and diagnostics-log parsing. Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are unverified by tests — verify those by hand against a real install. When adding behavior, extend the pure layer and cover it there rather than pushing logic into the coordinator.
+`Tests/LinkRouterTests/` covers the pure layer via `@testable import`: rule matching and precedence, Chrome profile parsing, picker layout, regex semantics, preset de-duplication, and the history log format and suggestions. Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are unverified by tests — verify those by hand against a real install. When adding behavior, extend the pure layer and cover it there rather than pushing logic into the coordinator.
 
 Chrome profile routing is verifiable without a UI: compare `stat -f '%Sm' ~/Library/Application\ Support/Google/Chrome/<Profile>/Sessions` before and after opening a link, and confirm only the targeted profile's timestamp moved.
 

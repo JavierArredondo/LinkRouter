@@ -98,36 +98,3 @@ final class SitePresetTests: XCTestCase {
     }
 }
 
-final class DiagnosticsLogTests: XCTestCase {
-    private let sample = """
-    2026-08-09T10:23:48Z host=github.com outcome=open destination=com.google.Chrome rule=abc
-    2026-08-09T10:24:01Z host=github.com outcome=open destination=com.google.Chrome rule=abc
-    2026-08-09T10:25:10Z host=news.ycombinator.com outcome=reject error=malformedURL
-    malformed line without fields
-    """
-
-    func testCountsHostsAndIgnoresUnparseableLines() {
-        let counts = DiagnosticsLog.hostCounts(in: sample)
-        XCTAssertEqual(counts, ["github.com": 2, "news.ycombinator.com": 1])
-    }
-
-    func testSuggestionsRankByFrequencyAndExcludeCoveredHosts() {
-        let counts = DiagnosticsLog.hostCounts(in: sample)
-        let covered = [Rule(name: "gh", order: 0, match: RuleMatch(host: "github.com", hostMode: .exact), targetID: UUID())]
-        XCTAssertEqual(DiagnosticsLog.suggestions(hostCounts: counts, rules: covered, limit: 8).map(\.host), ["news.ycombinator.com"])
-        XCTAssertEqual(DiagnosticsLog.suggestions(hostCounts: counts, rules: [], limit: 8).map(\.host), ["github.com", "news.ycombinator.com"])
-    }
-
-    func testWildcardRulesDoNotSuppressSuggestions() {
-        // Deciding wildcard coverage would mean running the engine; a redundant suggestion is the
-        // cheaper mistake, so only exact-host rules count as covered.
-        let counts = DiagnosticsLog.hostCounts(in: sample)
-        let wildcard = [Rule(name: "gh", order: 0, match: RuleMatch(host: "*.github.com", hostMode: .wildcard), targetID: UUID())]
-        XCTAssertTrue(DiagnosticsLog.suggestions(hostCounts: counts, rules: wildcard, limit: 8).contains { $0.host == "github.com" })
-    }
-
-    func testLimitIsRespected() {
-        let counts = ["a.com": 5, "b.com": 4, "c.com": 3]
-        XCTAssertEqual(DiagnosticsLog.suggestions(hostCounts: counts, rules: [], limit: 2).map(\.host), ["a.com", "b.com"])
-    }
-}

@@ -64,18 +64,30 @@ struct PresetSheet: View {
     }
 }
 
-struct SuggestionsList: View {
+struct SuggestionsSheet: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var coordinator: RoutingCoordinator
     @State private var targetID: UUID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !coordinator.configuration.diagnosticsEnabled {
-                Text("Turn on local diagnostics above to get suggestions from the sites you actually open.")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Suggested from your routing history").font(.title3.bold())
+            content
+            HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.borderedProminent) }
+        }
+        .padding()
+        .frame(width: 460)
+        .onAppear { coordinator.refreshSuggestions() }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !coordinator.configuration.isHistoryEnabled {
+                Label("Turn on history in the History tab to get suggestions from the sites you actually open.", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if coordinator.suggestions.isEmpty {
-                Text("No suggestions yet — they appear once links have been routed to hosts without a rule.")
+                Text("No suggestions yet — they appear once links have opened without a rule matching.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -96,6 +108,5 @@ struct SuggestionsList: View {
                 }
             }
         }
-        .onAppear { coordinator.refreshSuggestions() }
     }
 }
