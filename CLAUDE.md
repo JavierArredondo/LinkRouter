@@ -13,6 +13,7 @@ swift build
 swift test
 swift test --filter RuleEngineTests/testWildcardExcludesApexAndIncludesSubdomain   # single test
 bash Scripts/assemble-app.sh   # -> build/LinkRouter.app
+swift Scripts/generate-presets.swift   # Presets/presets.json -> SitePresets+Generated.swift
 ```
 
 `swift run LinkRouter` launches the executable, but it will **not** receive URLs: `CFBundleURLTypes` registration only works from an app bundle. To exercise real routing, run `Scripts/assemble-app.sh`, move `build/LinkRouter.app` to `/Applications` (Launch Services largely ignores handlers outside it), then set it as the default web handler and test with `open "https://github.com"`. `Package.swift` deliberately `exclude`s `App/Info.plist` — the assemble script is what copies it into the bundle and then re-signs, because the linker's ad-hoc signature is applied before the plist exists and leaves it unsealed.
@@ -26,6 +27,7 @@ Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configurati
 The core rule is that **routing and presentation logic is pure and OS-free; everything that touches macOS is an adapter**. Keep it that way — `Routing/`, `Picker/PickerLayout`, and `Diagnostics/DiagnosticsLog` import only Foundation and are the only parts under test.
 
 - `Routing/` — `URLNormalizer` (scheme/host validation, lowercasing, percent-encoded path) → `RuleEngine` (matching + precedence) → `Router.decide`, a pure function of `(URL, AppConfiguration, availableBundleIdentifiers)` returning a `RouteDecision` of `.open` / `.ask` / `.reject`. Also `SitePresets` (bundled catalog → generated rules) and `RulePatternValidator` (regex validation at authoring time). No AppKit, no I/O, no singletons.
+- `Presets/presets.json` — the source of truth for the preset catalog, compiled in via `SitePresets+Generated.swift`. `Scripts/generate-presets.swift` regenerates it and CI diffs the result, so the two cannot drift.
 - `App/RoutingCoordinator` (in `LinkRouterApp.swift`) — the `@MainActor` singleton that owns all mutable state and wires adapters to the Router. It queues incoming URLs and processes them strictly one at a time (`isProcessing` / `finish()` / `processNext()`), because the picker is modal; any new async path must call `finish()` on every branch or routing stalls permanently.
 - `Destinations/` — `BrowserRegistry` (discovers handlers, classifies which are real browsers, expands Chrome profiles), `ChromeProfileRegistry` (parses Chrome's `Local State`), `DefaultHandlerService`, `TargetLauncher`. All `@MainActor`.
 - `Picker/` — `PickerLayout` (pure ordering and numbering), `QuickPickerView` (SwiftUI), `QuickPickerController` (borderless `NSPanel` lifecycle).
@@ -50,6 +52,7 @@ The core rule is that **routing and presentation logic is pure and OS-free; ever
 - **Destination metadata carries new per-destination flags, not `AppConfiguration`.** Adding a non-optional property to that `Codable` struct breaks decoding of existing `configuration.json` files, and `ConfigurationStore.load` treats a decode failure as corruption and archives the file — losing the user's rules.
 - **Uninstalled browsers are retained** in `configuration.destinations` so existing rules stay repairable instead of silently breaking.
 - **Corrupt config is moved aside**, not deleted: renamed to `configuration.corrupt-<epoch>.json`, returning defaults.
+- **The preset catalog is generated, not parsed at launch.** `Presets/presets.json` exists so a preset can be contributed without writing Swift, but reading it at runtime would put a bundle lookup, file I/O and a decode failure into `Routing/`, which is the layer that must stay pure — and would mean shipping a catalog that can arrive empty. The generator validates instead: unknown modes, duplicate ids or hosts, uncompilable regexes, and a wildcard missing its leading `*.` all fail the build rather than becoming a dead rule in a user's configuration. **Never hand-edit `SitePresets+Generated.swift`**; CI regenerates and runs `git diff --exit-code`.
 - **Diagnostics are opt-in and host-only** (no full URLs, no query strings) and must never interrupt routing — errors there are swallowed by design. History-based rule suggestions read that log, so they are empty until the user enables it.
 
 ## Testing

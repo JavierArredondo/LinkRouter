@@ -24,6 +24,37 @@ Delete `~/Library/Application Support/LinkRouter/` to reset to a first-run state
 - **Don't break existing configurations.** `AppConfiguration` is `Codable` and a decode failure is treated as corruption, so adding a non-optional property would archive users' rules. Per-destination flags go in `Destination.metadata`.
 - **Read the invariants in [CLAUDE.md](CLAUDE.md) before changing routing, the picker, or Chrome profile handling.** They document decisions that look arbitrary but aren't — regex specificity ordering, apex exclusion for wildcards, single-resume of the picker completion, and so on. If you're deliberately changing one, say so in the PR.
 
+## Adding a site preset
+
+Presets are the one-click catalog in Settings. Adding one takes no Swift: edit [`Presets/presets.json`](Presets/presets.json), then regenerate.
+
+```jsonc
+{
+  "id": "cloud-consoles",              // stable, lowercase, no spaces — never rename it
+  "title": "Cloud Consoles",           // shown in the picker list
+  "detail": "AWS, GCP, Azure",         // one line, comma-separated product names
+  "hosts": [
+    { "host": "console.aws.amazon.com" },                 // "mode" defaults to "exact"
+    { "host": "*.console.aws.amazon.com", "mode": "wildcard" },
+    { "host": "^(dev|stg)\\.acme\\.io$", "mode": "regex" }
+  ]
+}
+```
+
+```sh
+swift Scripts/generate-presets.swift   # rewrites Sources/LinkRouter/Routing/SitePresets+Generated.swift
+swift test
+```
+
+Commit **both** the JSON and the regenerated Swift file — CI regenerates and diffs, so a PR that changes one without the other fails. Never edit `SitePresets+Generated.swift` by hand.
+
+The generator refuses malformed input rather than letting it become a dead rule in someone's configuration: unknown modes, duplicate ids or hosts, uncompilable regexes, a wildcard missing its leading `*.`, and a `*` in a host declared `exact`. Two things worth internalizing while picking hosts:
+
+- **A wildcard never matches the apex.** `*.notion.so` does not cover `notion.so`, so a preset that wants both must list both — see the `productivity-ai` entry.
+- **Preset ids are stable keys.** Renaming one is a breaking change for anyone whose rules came from it.
+
+Keep presets to widely-used services with stable hostnames. A preset that fits one company's internal tools belongs in a personal rule, not the bundled catalog.
+
 ## Pull requests
 
 1. Branch off `main`.

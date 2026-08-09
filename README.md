@@ -17,7 +17,7 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 - **Specificity-first precedence** — a narrower rule wins over a broader one regardless of list order; equally specific rules fall back to your manual ordering.
 - **Chrome profiles as first-class destinations** — each profile is discovered from Chrome's own profile list and launched directly, not just "whatever window is frontmost".
 - **Keyboard-first picker** — unmatched links open a borderless panel: digits and arrows select, `↩` opens, `⌘↩` opens *and* remembers the host as a new rule, `esc` cancels.
-- **Preset catalog** — seed rules from a bundled list of common sites in one click.
+- **Preset catalog** — seed rules from a bundled list of common sites in one click. The catalog is plain JSON in the repo ([`Presets/presets.json`](Presets/presets.json)), so adding a site takes a pull request, not Swift.
 - **History-based suggestions** — with local diagnostics enabled, LinkRouter proposes rules for the hosts you actually open.
 - **Fails safe** — a missing or uninstalled destination degrades to the picker; a link is never dropped.
 - **Local-first and private** — no network, no account, no telemetry. Diagnostics are opt-in, stay on disk, and record hosts only — never full URLs or query strings.

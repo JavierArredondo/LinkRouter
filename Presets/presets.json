@@ -1,0 +1,35 @@
+{
+  "presets": [
+    {
+      "id": "google-workspace",
+      "title": "Google Workspace",
+      "detail": "Gmail, Calendar, Drive, Docs, Meet, Chat, Groups, Contacts, Admin",
+      "hosts": [
+        { "host": "mail.google.com" },
+        { "host": "calendar.google.com" },
+        { "host": "drive.google.com" },
+        { "host": "docs.google.com" },
+        { "host": "meet.google.com" },
+        { "host": "chat.google.com" },
+        { "host": "groups.google.com" },
+        { "host": "contacts.google.com" },
+        { "host": "admin.google.com" }
+      ]
+    },
+    {
+      "id": "productivity-ai",
+      "title": "Productivity & AI",
+      "detail": "Notion, Linear, Slack, Atlassian, Claude, ChatGPT",
+      "hosts": [
+        { "host": "notion.so" },
+        { "host": "*.notion.so", "mode": "wildcard" },
+        { "host": "linear.app" },
+        { "host": "slack.com" },
+        { "host": "*.slack.com", "mode": "wildcard" },
+        { "host": "*.atlassian.net", "mode": "wildcard" },
+        { "host": "claude.ai" },
+        { "host": "chatgpt.com" }
+      ]
+    }
+  ]
+}

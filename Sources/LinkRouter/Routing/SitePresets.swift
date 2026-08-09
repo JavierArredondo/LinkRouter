@@ -19,41 +19,12 @@ struct SitePreset: Identifiable, Equatable, Sendable {
 
 /// A bundled catalog rather than a fetched one: the product has no network dependency, and rules
 /// must stay deterministic.
+///
+/// The catalog itself lives in `Presets/presets.json` and is compiled in via
+/// `SitePresets+Generated.swift` — edit the JSON and run `swift Scripts/generate-presets.swift`.
+/// Keeping it generated rather than parsed at launch is what lets this file stay pure: no bundle
+/// lookup, no I/O, no decode failure to degrade from.
 enum SitePresets {
-    static let all: [SitePreset] = [
-        SitePreset(
-            id: "google-workspace",
-            title: "Google Workspace",
-            detail: "Gmail, Calendar, Drive, Docs, Meet, Chat, Groups, Contacts, Admin",
-            hosts: [
-                PresetHost("mail.google.com"),
-                PresetHost("calendar.google.com"),
-                PresetHost("drive.google.com"),
-                PresetHost("docs.google.com"),
-                PresetHost("meet.google.com"),
-                PresetHost("chat.google.com"),
-                PresetHost("groups.google.com"),
-                PresetHost("contacts.google.com"),
-                PresetHost("admin.google.com")
-            ]
-        ),
-        SitePreset(
-            id: "productivity-ai",
-            title: "Productivity & AI",
-            detail: "Notion, Linear, Slack, Atlassian, Claude, ChatGPT",
-            hosts: [
-                PresetHost("notion.so"),
-                PresetHost("*.notion.so", .wildcard),
-                PresetHost("linear.app"),
-                PresetHost("slack.com"),
-                PresetHost("*.slack.com", .wildcard),
-                PresetHost("*.atlassian.net", .wildcard),
-                PresetHost("claude.ai"),
-                PresetHost("chatgpt.com")
-            ]
-        )
-    ]
-
     /// Skips hosts already covered by an identical matcher, so applying a preset twice — or applying
     /// one that overlaps existing rules — never produces duplicates.
     static func rules(for presets: [SitePreset], targetID: UUID, existing: [Rule], startingOrder: Int) -> [Rule] {
