@@ -18,6 +18,7 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 - **Browser profiles as first-class destinations** — Chrome, Edge, Brave, Vivaldi, Chromium and their beta/canary channels. Each profile is discovered from the browser's own profile list and launched directly, not just "whatever window is frontmost".
 - **Keyboard-first picker** — unmatched links open a borderless panel: digits and arrows select, `↩` opens, `⌘↩` opens *and* remembers the host as a new rule, `esc` cancels.
 - **Preset catalog** — seed rules from a bundled list of common sites in one click. The catalog is plain JSON in the repo ([`Presets/presets.json`](Presets/presets.json)), so adding a site takes a pull request, not Swift.
+- **Tracking parameters removed** — `utm_*`, `fbclid`, `gclid` and friends are stripped before the link opens, plus a curated set scoped to specific sites. Also plain JSON ([`Presets/tracking-parameters.json`](Presets/tracking-parameters.json)).
 - **History** — a searchable log of every link LinkRouter opened, with the destination and the rule that decided it. Query strings are dropped before anything is written, so session tokens and tracking parameters never reach disk.
 - **History-based suggestions** — LinkRouter proposes rules for the hosts that keep reaching the picker.
 - **Fails safe** — a missing or uninstalled destination degrades to the picker; a link is never dropped.

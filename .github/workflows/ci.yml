@@ -20,13 +20,15 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      # The JSON catalog is the source of truth; the Swift file is generated from it. This catches a
-      # preset added to the JSON but never regenerated, and a generated file edited by hand.
-      - name: Check the preset catalog is in sync
+      # The JSON catalogs are the source of truth; the Swift files are generated from them. This
+      # catches an entry added to a JSON but never regenerated, and a generated file edited by hand.
+      - name: Check the generated catalogs are in sync
         run: |
           swift Scripts/generate-presets.swift
+          swift Scripts/generate-tracking-parameters.swift
           git diff --exit-code -- Sources/LinkRouter/Routing/SitePresets+Generated.swift \
-            || { echo "::error::SitePresets+Generated.swift is stale. Run: swift Scripts/generate-presets.swift"; exit 1; }
+                                  Sources/LinkRouter/Routing/TrackingParameters+Generated.swift \
+            || { echo "::error::A generated catalog is stale. Run the scripts in Scripts/"; exit 1; }
 
       - name: Build
         run: swift build

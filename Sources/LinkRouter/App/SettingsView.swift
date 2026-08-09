@@ -66,6 +66,16 @@ private struct GeneralTab: View {
             }
 
             Section {
+                Toggle("Remove tracking parameters", isOn: Binding(
+                    get: { coordinator.configuration.isTrackingRemovalEnabled },
+                    set: { value in coordinator.update { $0.removeTrackingParameters = value } }
+                ))
+            } footer: {
+                Text("Strips utm_*, fbclid, gclid and similar before opening a link, plus a few that only make sense on specific sites. Turn it off if a link ever arrives incomplete.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
                 LabeledContent("Last routed", value: coordinator.lastRouted)
             }
         }

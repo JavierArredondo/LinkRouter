@@ -37,6 +37,8 @@ The core rule is that **routing and presentation logic is pure and OS-free; ever
 ### Invariants that carry design intent
 
 - **Precedence is specificity-first, order-second** (`RuleEngine.specificity`): exact host = 20, **regex = 15**, wildcard = 10, `+1` if a path condition exists; ties break on `Rule.order`. A narrower rule wins even if listed later.
+- **Tracking parameters are stripped at launch, not at match time.** Rules match on host and path, so removing query parameters can never change which rule won, and the history keeps the link as clicked. `TrackingParameters.strip` returns the *original* URL when nothing matched — rebuilding it can re-encode characters and hand the browser something subtly different.
+- **A globally stripped parameter must be unambiguous.** A false positive silently breaks links, which is worse than leaving a tracker in place; generic names like `s` or `t` are scoped to a host instead. The generator refuses a host-scoped entry that is already global, and a name a prefix already covers.
 - **Wildcards exclude the apex.** `*.example.com` matches `docs.example.com` but not `example.com`.
 - **A regex pattern is never case-folded.** Lowercasing it would rewrite `\D` into `\d` and invert its meaning, so host patterns get case-insensitivity as a *matching option* instead. Path patterns stay case-sensitive, consistent with prefix/contains.
 - **An uncompilable pattern matches nothing, never everything** — the opposite would hijack every link the moment a rule is saved with a typo. `RulePatternValidator` also blocks saving one.

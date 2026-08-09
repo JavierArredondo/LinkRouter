@@ -1,0 +1,178 @@
+#!/usr/bin/env swift
+//
+// Generates Sources/LinkRouter/Routing/TrackingParameters+Generated.swift from
+// Presets/tracking-parameters.json.
+//
+//   swift Scripts/generate-tracking-parameters.swift
+//
+// Same arrangement as the preset catalog: the JSON is the source of truth so a parameter can be
+// contributed without writing Swift, but the list is compiled in, because reading it at runtime
+// would put file I/O and a parse failure into Routing/, which is deliberately pure and OS-free.
+// CI regenerates and diffs, so a hand-edited generated file — or a JSON change that was never
+// regenerated — fails the build instead of shipping a list that does not match the repository.
+//
+// This script is standalone by necessity: it runs before/independently of the package build, so it
+// cannot import LinkRouter and redeclares the shapes it needs.
+
+import Foundation
+
+// MARK: - Input
+
+struct GlobalSpec: Decodable {
+    let prefixes: [String]
+    let names: [String]
+}
+
+struct HostScopedSpec: Decodable {
+    let host: String
+    let names: [String]
+}
+
+struct ParameterCatalog: Decodable {
+    let global: GlobalSpec
+    let hostScoped: [HostScopedSpec]
+}
+
+// MARK: - Paths
+
+let scriptURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+let projectRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+let inputURL = projectRoot.appendingPathComponent("Presets/tracking-parameters.json")
+let outputURL = projectRoot.appendingPathComponent("Sources/LinkRouter/Routing/TrackingParameters+Generated.swift")
+
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("error: \(message)\n".utf8))
+    exit(1)
+}
+
+// MARK: - Load
+
+guard let data = try? Data(contentsOf: inputURL) else { fail("cannot read \(inputURL.path)") }
+
+let catalog: ParameterCatalog
+do {
+    catalog = try JSONDecoder().decode(ParameterCatalog.self, from: data)
+} catch {
+    fail("\(inputURL.lastPathComponent) is not valid: \(error)")
+}
+
+// MARK: - Validate
+//
+// Matching is case-insensitive, so anything not already lowercase would be dead weight that reads as
+// if it were doing something. The redundancy checks keep the list honest: a duplicate entry, or a
+// name a prefix already covers, is a sign the list is drifting rather than being curated.
+
+func normalized(_ value: String, _ where_: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { fail("\(where_): empty entry") }
+    guard trimmed == trimmed.lowercased() else {
+        fail("\(where_): '\(value)' must be lowercase — matching is case-insensitive")
+    }
+    guard !trimmed.contains(" ") else { fail("\(where_): '\(value)' contains a space") }
+    return trimmed
+}
+
+var prefixes: [String] = []
+for prefix in catalog.global.prefixes {
+    let value = normalized(prefix, "global prefix")
+    guard !prefixes.contains(value) else { fail("duplicate global prefix '\(value)'") }
+    guard !prefixes.contains(where: { value.hasPrefix($0) }) else {
+        fail("global prefix '\(value)' is already covered by a broader prefix")
+    }
+    prefixes.append(value)
+}
+prefixes.sort()
+
+var globalNames: Set<String> = []
+for name in catalog.global.names {
+    let value = normalized(name, "global name")
+    guard globalNames.insert(value).inserted else { fail("duplicate global name '\(value)'") }
+    if let prefix = prefixes.first(where: { value.hasPrefix($0) }) {
+        fail("global name '\(value)' is already covered by prefix '\(prefix)'")
+    }
+}
+guard !globalNames.isEmpty || !prefixes.isEmpty else { fail("the catalog is empty") }
+
+var hosts: [(host: String, names: [String])] = []
+var seenHosts = Set<String>()
+for entry in catalog.hostScoped {
+    let host = normalized(entry.host, "host-scoped entry")
+    guard host.contains("."), !host.hasPrefix("."), !host.hasSuffix("."), !host.contains("*") else {
+        fail("host-scoped entry '\(entry.host)' is not a plain host — subdomains are matched automatically")
+    }
+    guard seenHosts.insert(host).inserted else { fail("duplicate host-scoped entry '\(host)'") }
+    guard !entry.names.isEmpty else { fail("host-scoped entry '\(host)' has no names") }
+
+    var names: Set<String> = []
+    for name in entry.names {
+        let value = normalized(name, "host-scoped name for '\(host)'")
+        guard names.insert(value).inserted else { fail("'\(host)': duplicate name '\(value)'") }
+        guard !globalNames.contains(value) else {
+            fail("'\(host)': '\(value)' is already stripped globally — the host entry is dead weight")
+        }
+        if let prefix = prefixes.first(where: { value.hasPrefix($0) }) {
+            fail("'\(host)': '\(value)' is already covered by global prefix '\(prefix)'")
+        }
+    }
+    hosts.append((host, names.sorted()))
+}
+hosts.sort { $0.host < $1.host }
+
+// MARK: - Emit
+
+func swiftLiteral(_ value: String) -> String { "\"\(value)\"" }
+
+var out = """
+// Generated by Scripts/generate-tracking-parameters.swift from Presets/tracking-parameters.json.
+// Do not edit.
+//
+// Add or change a parameter in Presets/tracking-parameters.json, then run:
+//
+//     swift Scripts/generate-tracking-parameters.swift
+
+extension TrackingParameters {
+    /// Removed from every URL.
+    static let globalNames: Set<String> = [
+
+"""
+for name in globalNames.sorted() { out += "        \(swiftLiteral(name)),\n" }
+out += """
+    ]
+
+    /// Removed from every URL when the parameter name starts with one of these.
+    static let globalPrefixes: [String] = [
+
+"""
+for prefix in prefixes { out += "        \(swiftLiteral(prefix)),\n" }
+out += """
+    ]
+
+    /// Removed only on the given host and its subdomains.
+    static let hostScopedNames: [String: Set<String>] = [
+
+"""
+for entry in hosts {
+    let names = entry.names.map(swiftLiteral).joined(separator: ", ")
+    out += "        \(swiftLiteral(entry.host)): [\(names)],\n"
+}
+out += """
+    ]
+}
+
+"""
+
+// Only rewrite on an actual change, so a no-op run does not churn file timestamps.
+let existing = try? String(contentsOf: outputURL, encoding: .utf8)
+if existing != out {
+    do {
+        try out.write(to: outputURL, atomically: true, encoding: .utf8)
+    } catch {
+        fail("cannot write \(outputURL.path): \(error)")
+    }
+    print("Wrote \(outputURL.lastPathComponent)")
+} else {
+    print("\(outputURL.lastPathComponent) is up to date")
+}
+
+let hostNameCount = hosts.reduce(0) { $0 + $1.names.count }
+print("\(globalNames.count) global names, \(prefixes.count) prefixes, \(hosts.count) hosts (\(hostNameCount) names)")

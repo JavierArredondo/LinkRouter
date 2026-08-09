@@ -75,8 +75,12 @@ struct AppConfiguration: Codable, Sendable {
     /// property would make them fail, and `ConfigurationStore.load` treats a decode failure as
     /// corruption and archives the file. Absent means on, which is the shipping default.
     var historyEnabled: Bool?
+    /// Optional for the same reason as `historyEnabled`: a non-optional property would fail to decode
+    /// configurations written before it existed. Absent means on.
+    var removeTrackingParameters: Bool?
 
     var isHistoryEnabled: Bool { historyEnabled ?? true }
+    var isTrackingRemovalEnabled: Bool { removeTrackingParameters ?? true }
 }
 
 struct NormalizedURL: Equatable, Sendable {

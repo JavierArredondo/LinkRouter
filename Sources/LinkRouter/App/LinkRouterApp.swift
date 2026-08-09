@@ -155,8 +155,11 @@ final class RoutingCoordinator: ObservableObject {
         }
     }
     private func launch(_ url: URL, _ destination: Destination, outcome: HistoryOutcome, ruleName: String?) {
+        // Cleaned at the last moment: rules match on host and path, so stripping never changes which
+        // rule won, and the history records the link the user actually clicked.
+        let target = configuration.isTrackingRemovalEnabled ? TrackingParameters.strip(from: url) : url
         Task {
-            let error = await launcher.launch(url, in: destination)
+            let error = await launcher.launch(target, in: destination)
             // Recorded after the attempt, so the history reflects what happened rather than what was intended.
             self.record(url, outcome: error == nil ? outcome : .failed, destination: destination, ruleName: ruleName)
             self.lastRouted = error == nil ? "\(url.host() ?? url.absoluteString) → \(destination.displayName)" : "Could not open \(destination.displayName)"
