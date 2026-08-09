@@ -369,7 +369,7 @@ private struct AdvancedTab: View {
     }
 
     private func subtitle(_ destination: Destination) -> String {
-        if let profile = destination.chromeProfileDirectory { return "Chrome profile · \(profile)" }
+        if let profile = destination.chromiumProfileDirectory { return "Browser profile · \(profile)" }
         return destination.bundleIdentifier
     }
 }

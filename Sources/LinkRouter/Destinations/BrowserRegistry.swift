@@ -20,7 +20,7 @@ final class BrowserRegistry {
                 metadata: [Destination.webDocumentHandlerKey: webDocumentHandlers.contains(id) ? "true" : "false"]
             )
         }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
-        return browsers + chromeProfiles(alongside: browsers)
+        return browsers + chromiumProfiles(alongside: browsers)
     }
 
     /// Claiming `https` is not the same as being a browser — chat clients and helpers claim it too.
@@ -30,19 +30,26 @@ final class BrowserRegistry {
         Set(NSWorkspace.shared.urlsForApplications(toOpen: .html).compactMap { Bundle(url: $0)?.bundleIdentifier })
     }
 
-    private func chromeProfiles(alongside browsers: [Destination]) -> [Destination] {
-        guard browsers.contains(where: { $0.bundleIdentifier == ChromeProfileRegistry.chromeBundleIdentifier }) else { return [] }
-        return ChromeProfileRegistry.profiles().map { profile in
-            Destination(
-                displayName: "Chrome — \(profile.displayName)",
-                bundleIdentifier: ChromeProfileRegistry.chromeBundleIdentifier,
-                kind: .chromeProfile,
-                metadata: [
-                    Destination.chromeProfileDirectoryKey: profile.directoryName,
-                    Destination.webDocumentHandlerKey: "true"
-                ]
-            )
-        }
+    /// Expands every installed Chromium-family browser into one destination per profile. Browsers
+    /// that are not installed are skipped, and one whose profile list cannot be read simply
+    /// contributes nothing — its plain destination still routes.
+    private func chromiumProfiles(alongside browsers: [Destination]) -> [Destination] {
+        let installed = Set(browsers.map(\.bundleIdentifier))
+        return ChromiumProfileRegistry.browsers
+            .filter { installed.contains($0.bundleIdentifier) }
+            .flatMap { browser in
+                ChromiumProfileRegistry.profiles(for: browser).map { profile in
+                    Destination(
+                        displayName: "\(browser.displayName) — \(profile.displayName)",
+                        bundleIdentifier: browser.bundleIdentifier,
+                        kind: .chromiumProfile,
+                        metadata: [
+                            Destination.chromiumProfileDirectoryKey: profile.directoryName,
+                            Destination.webDocumentHandlerKey: "true"
+                        ]
+                    )
+                }
+            }
     }
 
     func installedBundleIdentifiers() -> Set<String> {

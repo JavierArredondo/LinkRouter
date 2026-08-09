@@ -2,7 +2,10 @@ import Foundation
 
 enum DestinationKind: String, Codable, CaseIterable, Sendable {
     case browser
-    case chromeProfile
+    /// The raw value stays "chromeProfile" even though the concept covers the whole Chromium family:
+    /// changing it would fail to decode existing configuration.json files, and a decode failure is
+    /// treated as corruption and archives the file.
+    case chromiumProfile = "chromeProfile"
     case nativeApp
 }
 
@@ -23,19 +26,20 @@ struct Destination: Identifiable, Codable, Equatable, Hashable, Sendable {
 }
 
 extension Destination {
-    static let chromeProfileDirectoryKey = "chromeProfileDirectory"
+    /// Key kept as "chromeProfileDirectory" for the same compatibility reason as the kind above.
+    static let chromiumProfileDirectoryKey = "chromeProfileDirectory"
     static let webDocumentHandlerKey = "handlesWebDocuments"
 
-    var chromeProfileDirectory: String? { metadata[Destination.chromeProfileDirectoryKey] }
+    var chromiumProfileDirectory: String? { metadata[Destination.chromiumProfileDirectoryKey] }
 
     /// Anything that claims `https` shows up as a candidate, including apps that are not browsers.
     /// Absent means "assume browser" so destinations stored before this flag existed are not all
     /// demoted to the secondary section at once.
     var isWebBrowser: Bool { metadata[Destination.webDocumentHandlerKey] != "false" }
 
-    /// Every Chrome profile shares one bundle identifier, so identity has to include the profile
-    /// directory — otherwise profiles collapse into a single destination when the list is refreshed.
-    var identityKey: String { chromeProfileDirectory.map { "\(bundleIdentifier)#\($0)" } ?? bundleIdentifier }
+    /// Every profile of a given browser shares one bundle identifier, so identity has to include the
+    /// profile directory — otherwise profiles collapse into a single destination when refreshed.
+    var identityKey: String { chromiumProfileDirectory.map { "\(bundleIdentifier)#\($0)" } ?? bundleIdentifier }
 }
 
 enum HostMode: String, Codable, CaseIterable, Sendable { case exact, wildcard, regex }

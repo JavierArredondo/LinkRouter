@@ -15,7 +15,7 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 
 - **Rule-based routing** — match hosts exactly, by wildcard (`*.example.com`), or by regular expression, and narrow further with a path prefix, substring, or regex.
 - **Specificity-first precedence** — a narrower rule wins over a broader one regardless of list order; equally specific rules fall back to your manual ordering.
-- **Chrome profiles as first-class destinations** — each profile is discovered from Chrome's own profile list and launched directly, not just "whatever window is frontmost".
+- **Browser profiles as first-class destinations** — Chrome, Edge, Brave, Vivaldi, Chromium and their beta/canary channels. Each profile is discovered from the browser's own profile list and launched directly, not just "whatever window is frontmost".
 - **Keyboard-first picker** — unmatched links open a borderless panel: digits and arrows select, `↩` opens, `⌘↩` opens *and* remembers the host as a new rule, `esc` cancels.
 - **Preset catalog** — seed rules from a bundled list of common sites in one click. The catalog is plain JSON in the repo ([`Presets/presets.json`](Presets/presets.json)), so adding a site takes a pull request, not Swift.
 - **History** — a searchable log of every link LinkRouter opened, with the destination and the rule that decided it. Query strings are dropped before anything is written, so session tokens and tracking parameters never reach disk.
@@ -91,7 +91,7 @@ Routing and presentation logic is pure and OS-free; everything touching macOS is
 | --- | --- |
 | `Routing/` | `URLNormalizer` → `RuleEngine` → `Router.decide`, a pure function returning `.open` / `.ask` / `.reject`. Plus `SitePresets` and `RulePatternValidator`. |
 | `App/RoutingCoordinator` | The `@MainActor` singleton owning mutable state; queues incoming URLs and processes them one at a time, because the picker is modal. |
-| `Destinations/` | Browser discovery, Chrome profile parsing, default-handler registration, launching. |
+| `Destinations/` | Browser discovery, Chromium profile parsing, default-handler registration, launching. |
 | `Picker/` | Pure layout, the SwiftUI view, and the borderless `NSPanel` lifecycle. |
 | `Persistence/`, `History/` | `actor`s for file I/O; `RouteHistoryLog` holds the pure format and suggestion logic. |
 
@@ -99,7 +99,7 @@ See [CLAUDE.md](CLAUDE.md) for the full set of design invariants — the non-obv
 
 ## Status
 
-Implemented: browser and Chrome-profile routing, host/path rules with exact, wildcard and regex matchers, the bundled preset catalog, routing history with suggestions, and the picker.
+Implemented: browser and Chromium-profile routing, host/path rules with exact, wildcard and regex matchers, the bundled preset catalog, routing history with suggestions, and the picker.
 
 Known gaps:
 

@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project
 
-LinkRouter is a local-first macOS menu-bar utility that registers itself as the system handler for `http`/`https`, evaluates ordered host/path rules, and opens each link in the chosen browser or Chrome profile — falling back to a keyboard-first picker when no rule matches. Swift 6 / SwiftUI + AppKit, SwiftPM, no dependencies, no network, macOS 14+.
+LinkRouter is a local-first macOS menu-bar utility that registers itself as the system handler for `http`/`https`, evaluates ordered host/path rules, and opens each link in the chosen browser or Chromium profile — falling back to a keyboard-first picker when no rule matches. Swift 6 / SwiftUI + AppKit, SwiftPM, no dependencies, no network, macOS 14+.
 
 ## Commands
 
@@ -45,9 +45,9 @@ The core rule is that **routing and presentation logic is pure and OS-free; ever
 - **Failures degrade to the picker, never to a dropped link.** A missing or uninstalled destination yields `.ask` with an explanatory message; only a malformed/non-web URL yields `.reject`.
 - **The picker must resume the coordinator exactly once.** `QuickPickerController` nils its stored completion before invoking it, and treats `windowWillClose` / `windowDidResignKey` as cancellation. Any dismissal path that fails to report back leaves `isProcessing` true and silently queues every later link forever.
 - **A borderless `NSPanel` refuses key status** unless `canBecomeKey` is overridden, which would kill every keyboard shortcut. Click-away dismissal is gated on having become key at least once, so a panel that never takes focus cannot cancel itself on appearance.
-- **Chromium profiles are destinations, not a separate concept.** `ChromiumProfileRegistry` holds a table of Chromium-family browsers (bundle id + user-data path) and parses each one's `Local State` into one `Destination` per profile. The whole family shares one parser and one launch path because they share the format and the `--profile-directory` flag; only the paths differ. Because every profile of a browser shares its bundle id, **identity is `Destination.identityKey`, never `bundleIdentifier`** — keying by bundle id collapses the profiles into one and trips the duplicate-key trap in `Dictionary(uniqueKeysWithValues:)`.
+- **Chromium profiles are destinations, not a separate concept.** `ChromiumProfileRegistry` holds a table of Chromium-family browsers (bundle id + user-data path) and parses each one's `Local State` into one `Destination` per profile. One parser and one launch path serve the whole family because they share the format and the `--profile-directory` flag. Because every profile of a browser shares its bundle id, **identity is `Destination.identityKey`, never `bundleIdentifier`** — keying by bundle id collapses the profiles into one and trips the duplicate-key trap in `Dictionary(uniqueKeysWithValues:)`.
 - **`DestinationKind.chromiumProfile` and the profile metadata key keep their original raw values** (`"chromeProfile"`, `"chromeProfileDirectory"`) even though the Swift names generalised. Changing a persisted raw value would fail to decode existing `configuration.json` files, and a decode failure is treated as corruption and archives the file.
-- **Profile launches need `createsNewApplicationInstance = true`** and the URL passed as a command-line argument. macOS silently drops `OpenConfiguration.arguments` for an already-running app, so without the new-instance flag the link lands in whatever profile is frontmost. The browser's singleton forwards the new process's command line to the live instance. Verified against a running Chrome with three profiles; only Chrome has been verified empirically, the rest rely on the shared Chromium behaviour.
+- **Profile launches need `createsNewApplicationInstance = true`** and the URL passed as a command-line argument. macOS silently drops `OpenConfiguration.arguments` for an already-running app, so without the new-instance flag the link lands in whatever profile is frontmost. The browser's singleton forwards the new process's command line to the live instance. Verified against a running Chrome with three profiles; only Chrome is verified empirically, the rest rely on shared Chromium behaviour.
 - **Each browser's on-disk format is untrusted.** Any parse failure returns an empty profile list for that browser, degrading to its plain destination rather than breaking routing.
 - **`refreshDestinations` keeps the stored `id` but takes fresh name and metadata** from discovery. Rules target the id, so it must survive; preserving the whole stored destination instead would freeze renames and never deliver newly introduced metadata keys.
 - **Destination metadata carries new per-destination flags, not `AppConfiguration`.** Adding a non-optional property to that `Codable` struct breaks decoding of existing `configuration.json` files, and `ConfigurationStore.load` treats a decode failure as corruption and archives the file — losing the user's rules.
@@ -71,4 +71,4 @@ Implemented: browser and Chrome-profile routing, host/path rules with exact, wil
 
 Settings is reachable from the menu-bar icon **and** by relaunching the app: `applicationShouldHandleReopen` opens it, which is what makes Finder/Spotlight/`open -a` do something visible for a Dock-less app.
 
-The `.build/` and `build/` directories are local artifacts and are gitignored, as is `.claude/settings.local.json`. The repository is `github.com/JavierArredondo/LinkRouter` (public, MIT); CI runs `swift build`, `swift test`, and the assemble script on `macos-15`.
+The `.build/` and `build/` directories are local artifacts and are gitignored, as is `.Codex/settings.local.json`. The repository is `github.com/JavierArredondo/LinkRouter` (public, MIT); CI runs `swift build`, `swift test`, and the assemble script on `macos-15`.

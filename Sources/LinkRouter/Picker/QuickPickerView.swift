@@ -86,8 +86,8 @@ struct QuickPickerView: View {
             icon(for: entry.destination)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.destination.displayName).lineLimit(1)
-                if entry.destination.chromeProfileDirectory != nil {
-                    Text("Chrome profile")
+                if entry.destination.chromiumProfileDirectory != nil {
+                    Text("Browser profile")
                         .font(.caption2)
                         .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
                 }

@@ -41,7 +41,7 @@ final class RouteHistoryTests: XCTestCase {
     }
 
     func testDestinationDetailsAreCaptured() {
-        let destination = Destination(displayName: "Chrome — work", bundleIdentifier: "com.google.Chrome", kind: .chromeProfile)
+        let destination = Destination(displayName: "Chrome — work", bundleIdentifier: "com.google.Chrome", kind: .chromiumProfile)
         let made = HistoryEntry.make(url: URL(string: "https://a.com/x")!, date: epoch, outcome: .rule, destination: destination, ruleName: "acme")
         XCTAssertEqual(made.destinationName, "Chrome — work")
         XCTAssertEqual(made.destinationBundleIdentifier, "com.google.Chrome")
