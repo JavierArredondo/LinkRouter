@@ -87,6 +87,47 @@ final class RoutingCoordinator: ObservableObject {
         refreshSuggestions()
     }
 
+    func explain(_ url: URL) -> RouteExplanation {
+        RoutePlayground.explain(url,
+                                configuration: configuration,
+                                availableBundleIdentifiers: registry.installedBundleIdentifiers(),
+                                ownBundleIdentifier: router.ownBundleIdentifier)
+    }
+
+    /// Re-opens a link straight from the history, in a destination chosen by hand.
+    ///
+    /// Deliberately bypasses the router: routing it again would send it right back where it already
+    /// went, which is the thing the user is correcting. It also stays out of the serial queue,
+    /// because nothing modal is involved. The recorded entry carries no query string by design, so
+    /// this reopens the page rather than the exact original link.
+    func reopen(_ entry: HistoryEntry, in destination: Destination) {
+        guard let url = URL(string: "https://\(entry.host)\(entry.path)") else { return }
+        Task {
+            let error = await launcher.launch(url, in: destination)
+            self.record(url, outcome: error == nil ? .picker : .failed, destination: destination, ruleName: nil)
+            self.lastRouted = error == nil
+                ? "\(entry.host) → \(destination.displayName)"
+                : "Could not open \(destination.displayName)"
+            self.refreshHistory()
+        }
+    }
+
+    func exportConfiguration(to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(configuration).write(to: url, options: .atomic)
+    }
+
+    /// Rules reference destinations by id, and those ids are generated per machine, so an imported
+    /// configuration keeps its rules but its destinations are reconciled against what is installed
+    /// here. A rule whose destination does not exist degrades to the picker rather than being lost.
+    func importConfiguration(from url: URL) throws {
+        let imported = try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: url))
+        configuration = imported
+        refreshDestinations()
+        refreshHistory()
+    }
+
     func refreshHistory() {
         Task {
             let entries = await history.entries()

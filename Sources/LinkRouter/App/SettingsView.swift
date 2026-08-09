@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import SwiftUI
 
 struct SettingsView: View {
@@ -90,6 +91,7 @@ private struct RulesTab: View {
     @State private var editingRule: Rule?
     @State private var showingPresets = false
     @State private var showingSuggestions = false
+    @State private var showingPlayground = false
     @State private var selection: UUID?
 
     private var rules: [Rule] { coordinator.configuration.rules }
@@ -130,6 +132,9 @@ private struct RulesTab: View {
         .sheet(isPresented: $showingSuggestions) {
             SuggestionsSheet(coordinator: coordinator)
         }
+        .sheet(isPresented: $showingPlayground) {
+            PlaygroundSheet(coordinator: coordinator)
+        }
         .sheet(item: $editingRule) { rule in
             RuleEditor(rule: rule, destinations: coordinator.configuration.destinations) { saved in
                 coordinator.update { config in
@@ -162,6 +167,7 @@ private struct RulesTab: View {
             Button("Presets…") { showingPresets = true }
                 .disabled(coordinator.configuration.destinations.isEmpty)
             Button("Suggestions…") { showingSuggestions = true }
+            Button("Test…") { showingPlayground = true }
             Spacer()
             Text("Double-click to edit · drag to reorder")
                 .font(.caption).foregroundStyle(.secondary)
@@ -286,7 +292,11 @@ private struct HistoryTab: View {
             Divider()
 
             List {
-                ForEach(filtered) { entry in HistoryRow(entry: entry) }
+                ForEach(filtered) { entry in
+                    HistoryRow(entry: entry,
+                               destinations: coordinator.configuration.destinations,
+                               reopen: { coordinator.reopen(entry, in: $0) })
+                }
             }
             .listStyle(.inset)
             .overlay { if filtered.isEmpty { emptyState } }
@@ -324,6 +334,8 @@ private struct HistoryTab: View {
 
 private struct HistoryRow: View {
     let entry: HistoryEntry
+    var destinations: [Destination] = []
+    var reopen: (Destination) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -346,6 +358,20 @@ private struct HistoryRow: View {
                 }
             }
             Spacer(minLength: 0)
+            if !destinations.isEmpty {
+                // The moment a mis-route is obvious is the moment it lands in the history, so the
+                // correction lives here rather than back in the rule editor.
+                Menu {
+                    ForEach(destinations) { destination in
+                        Button(destination.displayName) { reopen(destination) }
+                    }
+                } label: {
+                    Image(systemName: "arrow.uturn.left")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Open this link somewhere else")
+            }
         }
         .padding(.vertical, 2)
     }
@@ -355,6 +381,7 @@ private struct HistoryRow: View {
 
 private struct AdvancedTab: View {
     @ObservedObject var coordinator: RoutingCoordinator
+    @State private var transferMessage: String?
 
     var body: some View {
         Form {
@@ -374,8 +401,45 @@ private struct AdvancedTab: View {
                 }
                 Button("Refresh destinations") { coordinator.refreshDestinations() }
             }
+
+            Section {
+                HStack {
+                    Button("Export configuration…") { export() }
+                    Button("Import configuration…") { performImport() }
+                }
+                if let transferMessage { Text(transferMessage).font(.caption).foregroundStyle(.secondary) }
+            } footer: {
+                Text("Rules travel with the file. Destinations are matched against what is installed on this machine, so a rule pointing at a browser you do not have degrades to the picker instead of being lost.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private func export() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "linkrouter-configuration.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try coordinator.exportConfiguration(to: url)
+            transferMessage = "Exported \(coordinator.configuration.rules.count) rules."
+        } catch {
+            transferMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func performImport() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try coordinator.importConfiguration(from: url)
+            transferMessage = "Imported \(coordinator.configuration.rules.count) rules."
+        } catch {
+            transferMessage = "Import failed: \(error.localizedDescription)"
+        }
     }
 
     private func subtitle(_ destination: Destination) -> String {
