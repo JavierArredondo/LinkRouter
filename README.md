@@ -27,6 +27,7 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 - **Tracking parameters removed** — `utm_*`, `fbclid`, `gclid` and friends are stripped before the link opens, plus a curated set scoped to specific sites. Also plain JSON ([`Presets/tracking-parameters.json`](Presets/tracking-parameters.json)).
 - **History** — a searchable log of every link LinkRouter opened, with the destination and the rule that decided it. Query strings are dropped before anything is written, so session tokens and tracking parameters never reach disk.
 - **History-based suggestions** — LinkRouter proposes rules for the hosts that keep reaching the picker.
+- **Command line** — `linkrouter test <url>` shows which rule wins and why; `linkrouter open <url>` routes without touching the GUI. Same binary, same configuration.
 - **Fails safe** — a missing or uninstalled destination degrades to the picker; a link is never dropped.
 - **Local-first and private** — no network, no account, no telemetry. History stays on your machine, is capped at the last 500 entries, records host and path only — never query strings — and can be turned off or cleared at any time.
 
@@ -87,6 +88,14 @@ bash Scripts/assemble-app.sh           # -> build/LinkRouter.app
 The app icon's source is [`Resources/AppIcon.svg`](Resources/AppIcon.svg) — a hand-authored vector, not a binary blob, so it is reviewable in a diff. `Scripts/generate-icon.swift` rasterises it into `AppIcon.icns` and a 1024px PNG during assembly; edit the SVG and rebuild.
 
 `bash Scripts/make-dmg.sh` produces `build/LinkRouter-<version>.dmg` from an optimised universal build. It signs and notarises only when `SIGNING_IDENTITY` and `NOTARY_PROFILE` are set, so it works without an Apple Developer account.
+
+The app binary doubles as a CLI. Symlink it once:
+
+```sh
+ln -s /Applications/LinkRouter.app/Contents/MacOS/LinkRouter /usr/local/bin/linkrouter
+linkrouter rules
+linkrouter test "https://github.com/acme/repo?utm_source=x"
+```
 
 `swift run LinkRouter` launches the executable, but it will **not** receive URLs — `CFBundleURLTypes` registration only works from an app bundle. To exercise real routing, assemble the app, move it to `/Applications`, set it as the default handler, and test with `open "https://github.com"`.
 

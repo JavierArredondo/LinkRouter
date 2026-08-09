@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-@main
 struct LinkRouterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var coordinator = RoutingCoordinator.shared
