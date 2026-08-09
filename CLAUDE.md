@@ -1,0 +1,67 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+LinkRouter is a local-first macOS menu-bar utility that registers itself as the system handler for `http`/`https`, evaluates ordered host/path rules, and opens each link in the chosen browser or Chrome profile — falling back to a keyboard-first picker when no rule matches. Swift 6 / SwiftUI + AppKit, SwiftPM, no dependencies, no network, macOS 14+.
+
+## Commands
+
+```sh
+swift build
+swift test
+swift test --filter RuleEngineTests/testWildcardExcludesApexAndIncludesSubdomain   # single test
+bash Scripts/assemble-app.sh   # -> build/LinkRouter.app
+```
+
+`swift run LinkRouter` launches the executable, but it will **not** receive URLs: `CFBundleURLTypes` registration only works from an app bundle. To exercise real routing, run `Scripts/assemble-app.sh`, move `build/LinkRouter.app` to `/Applications` (Launch Services largely ignores handlers outside it), then set it as the default web handler and test with `open "https://github.com"`. `Package.swift` deliberately `exclude`s `App/Info.plist` — the assemble script is what copies it into the bundle and then re-signs, because the linker's ad-hoc signature is applied before the plist exists and leaves it unsealed.
+
+macOS will not list LinkRouter in System Settings → Default web browser: that list is filtered to apps handling `public.html` documents. Use the app's own "Use LinkRouter for web links" button, which calls `NSWorkspace.setDefaultApplication` and bypasses the filter. Call it once per scheme sequentially — two concurrent requests race and one reports a spurious failure.
+
+Runtime state lives in `~/Library/Application Support/LinkRouter/` (`configuration.json`, `diagnostics.log`). Delete it to reset to a first-run state.
+
+## Architecture
+
+The core rule is that **routing and presentation logic is pure and OS-free; everything that touches macOS is an adapter**. Keep it that way — `Routing/`, `Picker/PickerLayout`, and `Diagnostics/DiagnosticsLog` import only Foundation and are the only parts under test.
+
+- `Routing/` — `URLNormalizer` (scheme/host validation, lowercasing, percent-encoded path) → `RuleEngine` (matching + precedence) → `Router.decide`, a pure function of `(URL, AppConfiguration, availableBundleIdentifiers)` returning a `RouteDecision` of `.open` / `.ask` / `.reject`. Also `SitePresets` (bundled catalog → generated rules) and `RulePatternValidator` (regex validation at authoring time). No AppKit, no I/O, no singletons.
+- `App/RoutingCoordinator` (in `LinkRouterApp.swift`) — the `@MainActor` singleton that owns all mutable state and wires adapters to the Router. It queues incoming URLs and processes them strictly one at a time (`isProcessing` / `finish()` / `processNext()`), because the picker is modal; any new async path must call `finish()` on every branch or routing stalls permanently.
+- `Destinations/` — `BrowserRegistry` (discovers handlers, classifies which are real browsers, expands Chrome profiles), `ChromeProfileRegistry` (parses Chrome's `Local State`), `DefaultHandlerService`, `TargetLauncher`. All `@MainActor`.
+- `Picker/` — `PickerLayout` (pure ordering and numbering), `QuickPickerView` (SwiftUI), `QuickPickerController` (borderless `NSPanel` lifecycle).
+- **`MenuBarExtra` is the only SwiftUI scene.** Settings and onboarding are AppKit `NSWindow`s owned by `HostedWindowController`. The SwiftUI `Settings` and `WindowGroup` scenes were removed because in an `.accessory` app they misbehave: `sendAction(showSettingsWindow:)` returns `true` while no window is ever created, so settings became unreachable. Do not reintroduce them — add windows through the controller instead, and note `isReleasedWhenClosed = false` is what makes a closed window safe to show again.
+- `Persistence/ConfigurationStore` and `Diagnostics/Diagnostics` — `actor`s for file I/O, called from the coordinator via `Task`.
+
+### Invariants that carry design intent
+
+- **Precedence is specificity-first, order-second** (`RuleEngine.specificity`): exact host = 20, **regex = 15**, wildcard = 10, `+1` if a path condition exists; ties break on `Rule.order`. A narrower rule wins even if listed later.
+- **Wildcards exclude the apex.** `*.example.com` matches `docs.example.com` but not `example.com`.
+- **A regex pattern is never case-folded.** Lowercasing it would rewrite `\D` into `\d` and invert its meaning, so host patterns get case-insensitivity as a *matching option* instead. Path patterns stay case-sensitive, consistent with prefix/contains.
+- **An uncompilable pattern matches nothing, never everything** — the opposite would hijack every link the moment a rule is saved with a typo. `RulePatternValidator` also blocks saving one.
+- **Regex input is capped** at `RuleEngine.maximumMatchLength`. Matching runs on the main thread while routing is serialized, so catastrophic backtracking would freeze the UI *and* every queued link. The cap bounds exposure to pattern complexity rather than URL length; it does not eliminate the risk.
+- **Recursion guard.** Destinations whose bundle id equals LinkRouter's own are filtered out of candidates and force `.ask` rather than `.open` — routing to self would loop forever.
+- **Failures degrade to the picker, never to a dropped link.** A missing or uninstalled destination yields `.ask` with an explanatory message; only a malformed/non-web URL yields `.reject`.
+- **The picker must resume the coordinator exactly once.** `QuickPickerController` nils its stored completion before invoking it, and treats `windowWillClose` / `windowDidResignKey` as cancellation. Any dismissal path that fails to report back leaves `isProcessing` true and silently queues every later link forever.
+- **A borderless `NSPanel` refuses key status** unless `canBecomeKey` is overridden, which would kill every keyboard shortcut. Click-away dismissal is gated on having become key at least once, so a panel that never takes focus cannot cancel itself on appearance.
+- **Chrome profiles are destinations, not a separate concept.** `ChromeProfileRegistry` parses `~/Library/Application Support/Google/Chrome/Local State` into one `Destination` per profile (`kind: .chromeProfile`, profile directory in `metadata`). Because they all share `com.google.Chrome`, **identity is `Destination.identityKey`, never `bundleIdentifier`** — keying by bundle id collapses the profiles into one and trips the duplicate-key trap in `Dictionary(uniqueKeysWithValues:)`.
+- **Profile launches need `createsNewApplicationInstance = true`** and the URL passed as a command-line argument. macOS silently drops `OpenConfiguration.arguments` for an already-running app, so without the new-instance flag the link lands in whatever profile is frontmost. Chrome's singleton forwards the new process's command line to the live instance. Verified against a running Chrome with three profiles.
+- **Chrome's on-disk format is untrusted.** Any parse failure returns an empty profile list, degrading to the plain "Google Chrome" destination rather than breaking routing.
+- **`refreshDestinations` keeps the stored `id` but takes fresh name and metadata** from discovery. Rules target the id, so it must survive; preserving the whole stored destination instead would freeze renames and never deliver newly introduced metadata keys.
+- **Destination metadata carries new per-destination flags, not `AppConfiguration`.** Adding a non-optional property to that `Codable` struct breaks decoding of existing `configuration.json` files, and `ConfigurationStore.load` treats a decode failure as corruption and archives the file — losing the user's rules.
+- **Uninstalled browsers are retained** in `configuration.destinations` so existing rules stay repairable instead of silently breaking.
+- **Corrupt config is moved aside**, not deleted: renamed to `configuration.corrupt-<epoch>.json`, returning defaults.
+- **Diagnostics are opt-in and host-only** (no full URLs, no query strings) and must never interrupt routing — errors there are swallowed by design. History-based rule suggestions read that log, so they are empty until the user enables it.
+
+## Testing
+
+`Tests/LinkRouterTests/` covers the pure layer via `@testable import`: rule matching and precedence, Chrome profile parsing, picker layout, regex semantics, preset de-duplication, and diagnostics-log parsing. Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are unverified by tests — verify those by hand against a real install. When adding behavior, extend the pure layer and cover it there rather than pushing logic into the coordinator.
+
+Chrome profile routing is verifiable without a UI: compare `stat -f '%Sm' ~/Library/Application\ Support/Google/Chrome/<Profile>/Sessions` before and after opening a link, and confirm only the targeted profile's timestamp moved.
+
+## Known state
+
+Implemented: browser and Chrome-profile routing, host/path rules with exact, wildcard and regex matchers, the bundled preset catalog, history-based suggestions, and the borderless picker. `DestinationKind.nativeApp` is modeled but unimplemented.
+
+Settings is reachable from the menu-bar icon **and** by relaunching the app: `applicationShouldHandleReopen` opens it, which is what makes Finder/Spotlight/`open -a` do something visible for a Dock-less app.
+
+The `.build/` and `build/` directories are local artifacts and are gitignored, as is `.claude/settings.local.json`. The repository is `github.com/JavierArredondo/LinkRouter` (public, MIT); CI runs `swift build`, `swift test`, and the assemble script on `macos-15`.
