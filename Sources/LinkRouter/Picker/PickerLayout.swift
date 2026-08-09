@@ -23,8 +23,8 @@ enum PickerLayout {
     static let maximumShortcut = 9
 
     static func sections(for destinations: [Destination]) -> [PickerSection] {
-        let browsers = destinations.filter(\.isWebBrowser)
-        let others = destinations.filter { !$0.isWebBrowser }
+        let browsers = destinations.filter(\.isPrimaryDestination)
+        let others = destinations.filter { !$0.isPrimaryDestination }
         var next = 0
         func entries(_ items: [Destination]) -> [PickerEntry] {
             items.map { destination in

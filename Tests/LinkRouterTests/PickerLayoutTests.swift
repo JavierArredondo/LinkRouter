@@ -53,3 +53,41 @@ final class PickerLayoutTests: XCTestCase {
         XCTAssertTrue(PickerLayout.sections(for: []).isEmpty)
     }
 }
+
+final class NativeAppDestinationTests: XCTestCase {
+    func testAHandPickedAppRanksWithTheBrowsersNotBelowThem() {
+        // It was chosen deliberately; only apps that merely happen to claim https get demoted.
+        let zoom = Destination(displayName: "Zoom", bundleIdentifier: "us.zoom.xos", kind: .nativeApp,
+                               metadata: [Destination.webDocumentHandlerKey: "false"])
+        let chat = Destination(displayName: "Chat", bundleIdentifier: "com.example.chat",
+                               metadata: [Destination.webDocumentHandlerKey: "false"])
+        let firefox = Destination(displayName: "Firefox", bundleIdentifier: "org.mozilla.firefox")
+
+        XCTAssertTrue(zoom.isPrimaryDestination)
+        XCTAssertFalse(chat.isPrimaryDestination)
+
+        let sections = PickerLayout.sections(for: [chat, firefox, zoom])
+        XCTAssertEqual(sections.map(\.title), ["Browsers", "Other apps"])
+        XCTAssertEqual(sections[0].entries.map(\.destination.displayName), ["Firefox", "Zoom"])
+        XCTAssertEqual(sections[1].entries.map(\.destination.displayName), ["Chat"])
+    }
+
+    func testANativeAppDestinationRoutesLikeAnyOther() throws {
+        let zoom = Destination(displayName: "Zoom", bundleIdentifier: "us.zoom.xos", kind: .nativeApp)
+        let rule = Rule(name: "zoom", order: 0, match: RuleMatch(host: "zoom.us", hostMode: .exact), targetID: zoom.id)
+        let configuration = AppConfiguration(rules: [rule], destinations: [zoom])
+        guard case .open(_, let selected, _) = Router(ownBundleIdentifier: "com.linkrouter.app")
+            .decide(URL(string: "https://zoom.us/j/123")!, configuration: configuration, availableBundleIdentifiers: ["us.zoom.xos"])
+        else { return XCTFail("Expected the native app to be routable") }
+        XCTAssertEqual(selected.kind, .nativeApp)
+    }
+
+    func testAnUninstalledNativeAppDegradesToThePicker() {
+        let zoom = Destination(displayName: "Zoom", bundleIdentifier: "us.zoom.xos", kind: .nativeApp)
+        let rule = Rule(name: "zoom", order: 0, match: RuleMatch(host: "zoom.us", hostMode: .exact), targetID: zoom.id)
+        let configuration = AppConfiguration(rules: [rule], destinations: [zoom])
+        guard case .ask = Router(ownBundleIdentifier: "com.linkrouter.app")
+            .decide(URL(string: "https://zoom.us/j/123")!, configuration: configuration, availableBundleIdentifiers: [])
+        else { return XCTFail("A missing app must degrade, not drop the link") }
+    }
+}

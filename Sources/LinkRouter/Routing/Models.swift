@@ -37,6 +37,10 @@ extension Destination {
     /// demoted to the secondary section at once.
     var isWebBrowser: Bool { metadata[Destination.webDocumentHandlerKey] != "false" }
 
+    /// Browsers and hand-picked native apps both belong in the main list. Only apps that merely
+    /// happen to claim `https` get demoted — those were never chosen, they were discovered.
+    var isPrimaryDestination: Bool { isWebBrowser || kind == .nativeApp }
+
     /// Every profile of a given browser shares one bundle identifier, so identity has to include the
     /// profile directory — otherwise profiles collapse into a single destination when refreshed.
     var identityKey: String { chromiumProfileDirectory.map { "\(bundleIdentifier)#\($0)" } ?? bundleIdentifier }

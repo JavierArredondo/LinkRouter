@@ -385,7 +385,7 @@ private struct AdvancedTab: View {
 
     var body: some View {
         Form {
-            Section("Destinations") {
+            Section {
                 ForEach(coordinator.configuration.destinations) { destination in
                     HStack(spacing: 10) {
                         DestinationIcon(bundleIdentifier: destination.bundleIdentifier, size: 18)
@@ -394,12 +394,23 @@ private struct AdvancedTab: View {
                             Text(subtitle(destination)).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if !destination.isWebBrowser {
+                        if destination.kind == .nativeApp {
+                            Button("Remove") { coordinator.removeDestination(destination) }
+                                .buttonStyle(.borderless).font(.caption)
+                        } else if !destination.isWebBrowser {
                             Text("not a browser").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
-                Button("Refresh destinations") { coordinator.refreshDestinations() }
+                HStack {
+                    Button("Refresh destinations") { coordinator.refreshDestinations() }
+                    Button("Add app…") { addNativeApp() }
+                }
+            } header: {
+                Text("Destinations")
+            } footer: {
+                Text("Discovery only finds apps that register as web handlers, so apps like Zoom or Figma never appear on their own. Adding one lets a rule send its links straight to it — useful only for apps that understand their own web links.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -414,6 +425,17 @@ private struct AdvancedTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func addNativeApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        transferMessage = coordinator.addNativeApp(at: url)
+            ? "Added \(FileManager.default.displayName(atPath: url.path))."
+            : "That app is already a destination."
     }
 
     private func export() {
@@ -444,6 +466,7 @@ private struct AdvancedTab: View {
 
     private func subtitle(_ destination: Destination) -> String {
         if let profile = destination.chromiumProfileDirectory { return "Browser profile · \(profile)" }
+        if destination.kind == .nativeApp { return "App · \(destination.bundleIdentifier)" }
         return destination.bundleIdentifier
     }
 }

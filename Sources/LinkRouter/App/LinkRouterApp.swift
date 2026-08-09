@@ -81,7 +81,9 @@ final class RoutingCoordinator: ObservableObject {
             guard let old = existing[fresh.identityKey] else { return fresh }
             return Destination(id: old.id, displayName: fresh.displayName, bundleIdentifier: fresh.bundleIdentifier, kind: fresh.kind, metadata: fresh.metadata)
         }
-        // Preserve removed browsers so rules remain repairable rather than silently disappearing.
+        // Native apps are chosen by hand and never appear in discovery, so they are carried over
+        // untouched. Removed browsers are preserved too, so rules stay repairable rather than
+        // silently disappearing.
         let unavailable = configuration.destinations.filter { old in !found.contains(where: { $0.identityKey == old.identityKey }) }
         configuration.destinations = refreshed + unavailable
         persist()
@@ -96,6 +98,47 @@ final class RoutingCoordinator: ObservableObject {
         return created.count
     }
 
+    /// Adds an installed application as a destination by hand.
+    ///
+    /// Discovery only finds apps that claim `https`, which is why Zoom or Figma never appear: they
+    /// register their own scheme instead. Opening a web URL "with" such an app still works — macOS
+    /// hands it the URL — but only apps that actually understand their own web links will do
+    /// something useful with it.
+    @discardableResult
+    func addNativeApp(at applicationURL: URL) -> Bool {
+        guard let bundle = Bundle(url: applicationURL), let identifier = bundle.bundleIdentifier,
+              identifier != router.ownBundleIdentifier,
+              !configuration.destinations.contains(where: { $0.identityKey == identifier }) else { return false }
+        let destination = Destination(
+            displayName: FileManager.default.displayName(atPath: applicationURL.path),
+            bundleIdentifier: identifier,
+            kind: .nativeApp
+        )
+        update { $0.destinations.append(destination) }
+        return true
+    }
+
+    func removeDestination(_ destination: Destination) {
+        update { configuration in
+            configuration.destinations.removeAll { $0.id == destination.id }
+            // Rules pointing at it are left alone: they degrade to the picker with an explanation,
+            // which is recoverable, whereas deleting them silently is not.
+        }
+    }
+
+    /// Launch Services only reports apps that claim `https`. A hand-picked native app is available
+    /// when it is installed, so it has to be added here or every rule targeting one would degrade
+    /// to the picker.
+    private func availableBundleIdentifiers() -> Set<String> {
+        var identifiers = registry.installedBundleIdentifiers()
+        for destination in configuration.destinations where destination.kind == .nativeApp {
+            if NSWorkspace.shared.urlForApplication(withBundleIdentifier: destination.bundleIdentifier) != nil {
+                identifiers.insert(destination.bundleIdentifier)
+            }
+        }
+        return identifiers
+    }
+
     func addRule(forHost host: String, targetID: UUID) {
         update { $0.rules.append(Rule(name: host, order: $0.rules.count, match: RuleMatch(host: host, hostMode: .exact), targetID: targetID)) }
         refreshSuggestions()
@@ -104,7 +147,7 @@ final class RoutingCoordinator: ObservableObject {
     func explain(_ url: URL, from sourceBundleIdentifier: String? = nil) -> RouteExplanation {
         RoutePlayground.explain(url,
                                 configuration: configuration,
-                                availableBundleIdentifiers: registry.installedBundleIdentifiers(),
+                                availableBundleIdentifiers: availableBundleIdentifiers(),
                                 ownBundleIdentifier: router.ownBundleIdentifier,
                                 context: RouteContext(sourceBundleIdentifier: sourceBundleIdentifier))
     }
@@ -206,7 +249,7 @@ final class RoutingCoordinator: ObservableObject {
         guard !isProcessing, !queue.isEmpty else { return }
         isProcessing = true
         let (url, context) = queue.removeFirst()
-        switch router.decide(url, configuration: configuration, availableBundleIdentifiers: registry.installedBundleIdentifiers(), context: context) {
+        switch router.decide(url, configuration: configuration, availableBundleIdentifiers: availableBundleIdentifiers(), context: context) {
         case .open(let url, let destination, let rule):
             launch(url, destination, outcome: rule == nil ? .fallback : .rule, ruleName: rule?.name)
         case .ask(let url, let candidates, let issue):

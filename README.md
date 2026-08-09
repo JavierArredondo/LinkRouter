@@ -27,6 +27,7 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 - **Tracking parameters removed** — `utm_*`, `fbclid`, `gclid` and friends are stripped before the link opens, plus a curated set scoped to specific sites. Also plain JSON ([`Presets/tracking-parameters.json`](Presets/tracking-parameters.json)).
 - **History** — a searchable log of every link LinkRouter opened, with the destination and the rule that decided it. Query strings are dropped before anything is written, so session tokens and tracking parameters never reach disk.
 - **History-based suggestions** — LinkRouter proposes rules for the hosts that keep reaching the picker.
+- **Native apps as destinations** — add any installed app by hand and route a host family straight to it. Discovery only finds apps that register as web handlers, which is why Zoom or Figma never show up on their own.
 - **Command line** — `linkrouter test <url>` shows which rule wins and why; `linkrouter open <url>` routes without touching the GUI. Same binary, same configuration.
 - **Fails safe** — a missing or uninstalled destination degrades to the picker; a link is never dropped.
 - **Local-first and private** — no network, no account, no telemetry. History stays on your machine, is capped at the last 500 entries, records host and path only — never query strings — and can be turned off or cleared at any time.
@@ -119,7 +120,6 @@ Implemented: browser and Chromium-profile routing, host/path rules with exact, w
 
 Known gaps:
 
-- `DestinationKind.nativeApp` is modeled but unimplemented.
 - Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are covered by manual verification rather than tests.
 
 ## Releasing
