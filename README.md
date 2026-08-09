@@ -6,6 +6,12 @@ LinkRouter is a local-first macOS menu-bar utility that registers itself as the 
 
 Work links to your work Chrome profile, personal links to Safari, `localhost` to whatever you're debugging in — without ever thinking about it again.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Clicking a link with no matching rule opens the picker; arrows select a Chrome profile, ⌘R remembers it, and ⌘↩ opens the link and writes the rule." width="700">
+</p>
+
+<p align="center"><em>A link with no rule opens the picker. Arrows select, <code>⌘R</code> remembers, <code>⌘↩</code> opens it and writes the rule — which is there in Settings a second later.</em></p>
+
 [![CI](https://github.com/JavierArredondo/LinkRouter/actions/workflows/ci.yml/badge.svg)](https://github.com/JavierArredondo/LinkRouter/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 ![Swift](https://img.shields.io/badge/swift-6.0-orange)
