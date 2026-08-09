@@ -5,11 +5,12 @@ struct PlaygroundSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var coordinator: RoutingCoordinator
     @State private var text = ""
+    @State private var source: String?
 
     private var explanation: RouteExplanation? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
-        return coordinator.explain(url)
+        return coordinator.explain(url, from: source)
     }
 
     var body: some View {
@@ -21,6 +22,11 @@ struct PlaygroundSheet: View {
             TextField("https://example.com/path", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
+
+            Picker("Opened from", selection: $source) {
+                Text("Any app").tag(String?.none)
+                ForEach(coordinator.sourceCandidates()) { Text($0.name).tag(String?.some($0.bundleIdentifier)) }
+            }
 
             if let explanation {
                 result(explanation)

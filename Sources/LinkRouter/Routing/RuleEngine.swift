@@ -6,7 +6,7 @@ struct RuleEngine: Sendable {
     /// bounds the damage to pattern complexity rather than URL length.
     static let maximumMatchLength = 2048
 
-    func match(_ normalizedURL: NormalizedURL, rules: [Rule]) -> Rule? {
+    func match(_ normalizedURL: NormalizedURL, rules: [Rule], context: RouteContext = .unknown) -> Rule? {
         // Compiled once per evaluation rather than once per rule: the same pattern often repeats,
         // and keeping the cache local avoids making this otherwise pure type stateful.
         var cache: [String: NSRegularExpression?] = [:]
@@ -18,7 +18,7 @@ struct RuleEngine: Sendable {
             return compiled
         }
         return rules.filter(\.enabled)
-            .filter { matches($0.match, url: normalizedURL, expression: expression) }
+            .filter { matches($0.match, url: normalizedURL, context: context, expression: expression) }
             .sorted { lhs, rhs in
                 let left = specificity(lhs.match)
                 let right = specificity(rhs.match)
@@ -27,7 +27,12 @@ struct RuleEngine: Sendable {
             .first
     }
 
-    private func matches(_ match: RuleMatch, url: NormalizedURL, expression: (String, Bool) -> NSRegularExpression?) -> Bool {
+    private func matches(_ match: RuleMatch, url: NormalizedURL, context: RouteContext, expression: (String, Bool) -> NSRegularExpression?) -> Bool {
+        if let required = match.sourceBundleIdentifier {
+            // An unknown source must not satisfy a source-scoped rule: the alternative is a rule
+            // meant for links from one app quietly applying to every link.
+            guard required.caseInsensitiveCompare(context.sourceBundleIdentifier ?? "") == .orderedSame else { return false }
+        }
         let trimmedHost = match.host.trimmingCharacters(in: .whitespacesAndNewlines)
         let hostMatches: Bool
         switch match.hostMode {
@@ -69,6 +74,9 @@ struct RuleEngine: Sendable {
         case .regex: host = 15
         case .wildcard: host = 10
         }
-        return host + (match.pathMode == nil ? 0 : 1)
+        // A source condition and a path condition are each one extra restriction. Weighting them
+        // equally lets a tie fall back to user ordering rather than inventing a winner between two
+        // rules that are narrow in different ways.
+        return host + (match.pathMode == nil ? 0 : 1) + (match.sourceBundleIdentifier == nil ? 0 : 1)
     }
 }

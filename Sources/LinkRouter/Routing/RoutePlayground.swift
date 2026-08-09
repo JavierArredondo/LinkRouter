@@ -29,24 +29,25 @@ enum RoutePlayground {
         _ url: URL,
         configuration: AppConfiguration,
         availableBundleIdentifiers: Set<String>,
-        ownBundleIdentifier: String
+        ownBundleIdentifier: String,
+        context: RouteContext = .unknown
     ) -> RouteExplanation {
         switch URLNormalizer.normalize(url) {
         case .failure(let error):
             return RouteExplanation(error: error, host: nil, path: nil, candidates: [], destination: nil, strippedURL: nil)
         case .success(let normalized):
             let engine = RuleEngine()
-            let winner = engine.match(normalized, rules: configuration.rules)
+            let winner = engine.match(normalized, rules: configuration.rules, context: context)
             // Re-running the engine per rule keeps this honest: a candidate is anything the real
             // matcher accepts, not a re-implementation of the matching rules.
             let matching = configuration.rules.filter { rule in
-                engine.match(normalized, rules: [rule]) != nil
+                engine.match(normalized, rules: [rule], context: context) != nil
             }
             let ranked = matching.sorted { lhs, rhs in
-                engine.match(normalized, rules: [lhs, rhs])?.id == lhs.id
+                engine.match(normalized, rules: [lhs, rhs], context: context)?.id == lhs.id
             }
             let decision = Router(ownBundleIdentifier: ownBundleIdentifier)
-                .decide(url, configuration: configuration, availableBundleIdentifiers: availableBundleIdentifiers)
+                .decide(url, configuration: configuration, availableBundleIdentifiers: availableBundleIdentifiers, context: context)
             let destination: Destination?
             switch decision {
             case .open(_, let target, _): destination = target

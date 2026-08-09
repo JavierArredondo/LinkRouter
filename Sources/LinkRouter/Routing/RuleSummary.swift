@@ -22,5 +22,16 @@ enum RuleSummary {
         }
     }
 
-    static func description(_ match: RuleMatch) -> String { "\(hostLabel(match)) · \(pathLabel(match))" }
+    /// Only the last path component of the bundle identifier: "com.tinyspeck.slackmacgap" is noise
+    /// in a list, "slackmacgap" is recognisable.
+    static func sourceLabel(_ match: RuleMatch) -> String? {
+        guard let identifier = match.sourceBundleIdentifier, !identifier.isEmpty else { return nil }
+        return "from \(identifier.split(separator: ".").last.map(String.init) ?? identifier)"
+    }
+
+    static func description(_ match: RuleMatch) -> String {
+        [hostLabel(match), pathLabel(match), sourceLabel(match)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
 }

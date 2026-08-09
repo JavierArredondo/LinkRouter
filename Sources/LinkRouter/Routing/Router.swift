@@ -4,11 +4,11 @@ struct Router: Sendable {
     let ruleEngine = RuleEngine()
     let ownBundleIdentifier: String
 
-    func decide(_ url: URL, configuration: AppConfiguration, availableBundleIdentifiers: Set<String>) -> RouteDecision {
+    func decide(_ url: URL, configuration: AppConfiguration, availableBundleIdentifiers: Set<String>, context: RouteContext = .unknown) -> RouteDecision {
         switch URLNormalizer.normalize(url) {
         case .failure(let error): return .reject(url, error)
         case .success(let normalized):
-            if let rule = ruleEngine.match(normalized, rules: configuration.rules) {
+            if let rule = ruleEngine.match(normalized, rules: configuration.rules, context: context) {
                 guard let destination = configuration.destinations.first(where: { $0.id == rule.targetID }) else {
                     return .ask(url, available(configuration, availableBundleIdentifiers), .unavailableDestination(rule.targetID))
                 }

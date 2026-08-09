@@ -20,7 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        Task { @MainActor in RoutingCoordinator.shared.receive(urls) }
+        // Sampled here, synchronously, because this is the closest moment to the click: macOS never
+        // tells a URL handler who sent the link, and activating our own picker destroys the evidence.
+        let source = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        Task { @MainActor in RoutingCoordinator.shared.receive(urls, from: source) }
     }
 
     /// Without this, launching an already-running menu-bar app looks like nothing happened: there is
@@ -29,6 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in RoutingCoordinator.shared.presentSettings() }
         return true
     }
+}
+
+struct SourceApp: Identifiable, Equatable, Sendable {
+    let name: String
+    let bundleIdentifier: String
+    var id: String { bundleIdentifier }
 }
 
 @MainActor
@@ -46,7 +55,7 @@ final class RoutingCoordinator: ObservableObject {
     private let handlerService = DefaultHandlerService()
     private let history = RouteHistoryStore()
     private lazy var router = Router(ownBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.example.LinkRouter")
-    private var queue: [URL] = []
+    private var queue: [(url: URL, context: RouteContext)] = []
     private var isProcessing = false
     private let picker = QuickPickerController()
     private let settingsWindow = HostedWindowController()
@@ -54,7 +63,13 @@ final class RoutingCoordinator: ObservableObject {
 
     private init() { Task { configuration = await store.load(); refreshDestinations(); refreshHandlerStatus() } }
 
-    func receive(_ urls: [URL]) { queue.append(contentsOf: urls); processNext() }
+    func receive(_ urls: [URL], from sourceBundleIdentifier: String? = nil) {
+        // Our own identifier means the sample raced our activation; unknown is more honest than wrong.
+        let source = sourceBundleIdentifier == router.ownBundleIdentifier ? nil : sourceBundleIdentifier
+        let context = RouteContext(sourceBundleIdentifier: source)
+        queue.append(contentsOf: urls.map { ($0, context) })
+        processNext()
+    }
     func refreshDestinations() {
         DestinationIcons.invalidate() // An app may have moved or been updated since the last scan.
         let found = registry.discoveredDestinations(excluding: router.ownBundleIdentifier)
@@ -87,11 +102,28 @@ final class RoutingCoordinator: ObservableObject {
         refreshSuggestions()
     }
 
-    func explain(_ url: URL) -> RouteExplanation {
+    func explain(_ url: URL, from sourceBundleIdentifier: String? = nil) -> RouteExplanation {
         RoutePlayground.explain(url,
                                 configuration: configuration,
                                 availableBundleIdentifiers: registry.installedBundleIdentifiers(),
-                                ownBundleIdentifier: router.ownBundleIdentifier)
+                                ownBundleIdentifier: router.ownBundleIdentifier,
+                                context: RouteContext(sourceBundleIdentifier: sourceBundleIdentifier))
+    }
+
+    /// Apps that could plausibly send a link, for the rule editor. Running regular apps only —
+    /// a background daemon is not something a user recognises in a menu.
+    func sourceCandidates() -> [SourceApp] {
+        var seen = Set<String>()
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> SourceApp? in
+                guard let identifier = app.bundleIdentifier,
+                      identifier != router.ownBundleIdentifier,
+                      let name = app.localizedName,
+                      seen.insert(identifier).inserted else { return nil }
+                return SourceApp(name: name, bundleIdentifier: identifier)
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     /// Re-opens a link straight from the history, in a destination chosen by hand.
@@ -174,8 +206,8 @@ final class RoutingCoordinator: ObservableObject {
     private func processNext() {
         guard !isProcessing, !queue.isEmpty else { return }
         isProcessing = true
-        let url = queue.removeFirst()
-        switch router.decide(url, configuration: configuration, availableBundleIdentifiers: registry.installedBundleIdentifiers()) {
+        let (url, context) = queue.removeFirst()
+        switch router.decide(url, configuration: configuration, availableBundleIdentifiers: registry.installedBundleIdentifiers(), context: context) {
         case .open(let url, let destination, let rule):
             launch(url, destination, outcome: rule == nil ? .fallback : .rule, ruleName: rule?.name)
         case .ask(let url, let candidates, let issue):

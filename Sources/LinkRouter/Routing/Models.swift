@@ -50,6 +50,19 @@ struct RuleMatch: Codable, Equatable, Sendable {
     var hostMode: HostMode
     var pathMode: PathMode?
     var pathValue: String?
+    /// Bundle identifier of the app the link came from, when the rule is scoped to one.
+    ///
+    /// Optional so rules written before this existed still decode — a non-optional property would
+    /// make `ConfigurationStore` treat every stored configuration as corrupt and archive it.
+    var sourceBundleIdentifier: String?
+
+    init(host: String, hostMode: HostMode, pathMode: PathMode? = nil, pathValue: String? = nil, sourceBundleIdentifier: String? = nil) {
+        self.host = host
+        self.hostMode = hostMode
+        self.pathMode = pathMode
+        self.pathValue = pathValue
+        self.sourceBundleIdentifier = sourceBundleIdentifier
+    }
 }
 
 struct Rule: Identifiable, Codable, Equatable, Sendable {
@@ -88,6 +101,16 @@ struct NormalizedURL: Equatable, Sendable {
     let scheme: String
     let host: String
     let path: String
+}
+
+/// What was known about a link beyond the URL itself when it arrived.
+struct RouteContext: Equatable, Sendable {
+    /// The app that was frontmost when the link arrived. An approximation of "who sent this": macOS
+    /// does not tell a URL handler its sender, and a link opened from a background app or after a
+    /// delay will attribute wrongly. Rules that use it are opt-in for that reason.
+    var sourceBundleIdentifier: String?
+
+    static let unknown = RouteContext(sourceBundleIdentifier: nil)
 }
 
 enum RouteError: Error, Equatable, Sendable {

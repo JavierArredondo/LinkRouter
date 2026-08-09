@@ -136,7 +136,7 @@ private struct RulesTab: View {
             PlaygroundSheet(coordinator: coordinator)
         }
         .sheet(item: $editingRule) { rule in
-            RuleEditor(rule: rule, destinations: coordinator.configuration.destinations) { saved in
+            RuleEditor(rule: rule, destinations: coordinator.configuration.destinations, sources: coordinator.sourceCandidates()) { saved in
                 coordinator.update { config in
                     if let index = config.rules.firstIndex(where: { $0.id == saved.id }) { config.rules[index] = saved }
                     else { config.rules.append(saved) }
@@ -454,12 +454,22 @@ private struct RuleEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rule: Rule
     let destinations: [Destination]
+    let sources: [SourceApp]
     let save: (Rule) -> Void
 
-    init(rule: Rule, destinations: [Destination], save: @escaping (Rule) -> Void) {
+    init(rule: Rule, destinations: [Destination], sources: [SourceApp], save: @escaping (Rule) -> Void) {
         _rule = State(initialValue: rule)
         self.destinations = destinations
+        self.sources = sources
         self.save = save
+    }
+
+    /// A rule may already name an app that is not running now; dropping it from the menu would
+    /// silently clear the condition the moment the rule is saved.
+    private var sourceOptions: [SourceApp] {
+        guard let stored = rule.match.sourceBundleIdentifier,
+              !sources.contains(where: { $0.bundleIdentifier == stored }) else { return sources }
+        return ([SourceApp(name: stored, bundleIdentifier: stored)] + sources)
     }
 
     private var hostPrompt: String {
@@ -499,6 +509,19 @@ private struct RuleEditor: View {
                         Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                     }
                 }
+                Section {
+                    Picker("Only when opened from", selection: Binding(
+                        get: { rule.match.sourceBundleIdentifier },
+                        set: { rule.match.sourceBundleIdentifier = $0 }
+                    )) {
+                        Text("Any app").tag(String?.none)
+                        ForEach(sourceOptions) { Text($0.name).tag(String?.some($0.bundleIdentifier)) }
+                    }
+                } footer: {
+                    Text("The source is the app that was frontmost when the link arrived — macOS does not tell a handler who sent it. A link opened from a background app may be attributed wrongly, so leave this on \"Any app\" unless you need it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section {
                     Picker("Open in", selection: $rule.targetID) {
                         ForEach(destinations) { Text($0.displayName).tag($0.id) }
