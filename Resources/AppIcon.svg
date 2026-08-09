@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="LinkRouter">
+  <title>LinkRouter</title>
+  <!-- One link entering, two destinations leaving. Drawn as original geometry rather than derived
+       from SF Symbols, whose licence permits the symbols in an app's interface but not in its icon. -->
+  <rect width="512" height="512" rx="114.5" ry="114.5" fill="#0E0E0E"/>
+  <!-- Stem, forking into two arms. The arms stop at the arrowhead bases so the round caps stay hidden. -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 400 L256 286 L184 214"/>
+    <path d="M256 286 L328 214"/>
+  </g>
+  <!-- Solid arrowheads: a stroked chevron blurs into a corner bracket at 16px, a filled triangle does not. -->
+  <g fill="#FFFFFF">
+    <path d="M140 170 L211 187 L157 241 Z"/>
+    <path d="M372 170 L301 187 L355 241 Z"/>
+  </g>
+</svg>
