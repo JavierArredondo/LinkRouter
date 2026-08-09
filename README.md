@@ -67,6 +67,8 @@ swift test --filter RuleEngineTests    # a single suite
 bash Scripts/assemble-app.sh           # -> build/LinkRouter.app
 ```
 
+The app icon is generated from code by `Scripts/generate-icon.swift`, which the assemble script runs — there is no binary asset to edit. Change the colours or the glyph there and rebuild.
+
 `swift run LinkRouter` launches the executable, but it will **not** receive URLs — `CFBundleURLTypes` registration only works from an app bundle. To exercise real routing, assemble the app, move it to `/Applications`, set it as the default handler, and test with `open "https://github.com"`.
 
 ### Architecture
