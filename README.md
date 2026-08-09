@@ -25,6 +25,16 @@ Work links to your work Chrome profile, personal links to Safari, `localhost` to
 
 ## Install
 
+Download the disk image from [Releases](https://github.com/JavierArredondo/LinkRouter/releases), open it, and drag LinkRouter to Applications. The build is universal — Apple silicon and Intel.
+
+> **Not notarised yet.** macOS will say the app is damaged. That means quarantined, not corrupt. Clear the attribute once:
+> ```sh
+> xattr -d com.apple.quarantine /Applications/LinkRouter.app
+> ```
+> This goes away once the project has an Apple Developer ID; the release pipeline signs and notarises automatically as soon as the certificate is available as a repository secret.
+
+### From source
+
 Requires macOS 14+ and Xcode 16+ (Swift 6).
 
 ```sh
@@ -69,6 +79,8 @@ bash Scripts/assemble-app.sh           # -> build/LinkRouter.app
 
 The app icon's source is [`Resources/AppIcon.svg`](Resources/AppIcon.svg) — a hand-authored vector, not a binary blob, so it is reviewable in a diff. `Scripts/generate-icon.swift` rasterises it into `AppIcon.icns` and a 1024px PNG during assembly; edit the SVG and rebuild.
 
+`bash Scripts/make-dmg.sh` produces `build/LinkRouter-<version>.dmg` from an optimised universal build. It signs and notarises only when `SIGNING_IDENTITY` and `NOTARY_PROFILE` are set, so it works without an Apple Developer account.
+
 `swift run LinkRouter` launches the executable, but it will **not** receive URLs — `CFBundleURLTypes` registration only works from an app bundle. To exercise real routing, assemble the app, move it to `/Applications`, set it as the default handler, and test with `open "https://github.com"`.
 
 ### Architecture
@@ -93,6 +105,20 @@ Known gaps:
 
 - `DestinationKind.nativeApp` is modeled but unimplemented.
 - Adapters (`NSWorkspace`, panels, Launch Services) are not injectable and are covered by manual verification rather than tests.
+
+## Releasing
+
+Push a `v*` tag. [`.github/workflows/release.yml`](.github/workflows/release.yml) tests, builds a universal release binary, packages the disk image, and publishes a GitHub release.
+
+Signing is wired but dormant. Add these repository secrets and the same pipeline starts producing notarised builds, no workflow changes needed:
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE` | Developer ID Application certificate, exported as `.p12`, base64-encoded |
+| `MACOS_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` |
+| `MACOS_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `NOTARY_KEY` | App Store Connect API key (`.p8`), base64-encoded |
+| `NOTARY_KEY_ID`, `NOTARY_ISSUER` | Identifiers shown alongside that key |
 
 ## Contributing
 

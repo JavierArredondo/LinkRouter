@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The release must not ship code that fails the same checks main is held to.
+      - name: Test
+        run: swift test
+
+      - name: Check the preset catalog is in sync
+        run: |
+          swift Scripts/generate-presets.swift
+          git diff --exit-code -- Sources/LinkRouter/Routing/SitePresets+Generated.swift \
+            || { echo "::error::SitePresets+Generated.swift is stale. Run: swift Scripts/generate-presets.swift"; exit 1; }
+
+      # Signing is optional. Without these secrets the workflow still produces a working disk image,
+      # but macOS quarantines it on the recipient's machine — see "Releasing" in the README.
+      - name: Import signing certificate
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          # A dedicated keychain, so the certificate never touches the runner's default one.
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          echo "$CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Without this, codesign blocks on a GUI prompt that no one is there to answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm certificate.p12
+
+      - name: Store notarisation credentials
+        if: ${{ secrets.NOTARY_KEY != '' }}
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          echo "$NOTARY_KEY" | base64 --decode > notary.p8
+          xcrun notarytool store-credentials ci \
+            --key notary.p8 --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+          rm notary.p8
+
+      - name: Build the disk image
+        env:
+          # Empty when the secret is unset; both scripts fall back to ad-hoc signing and skip notarising.
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARY_PROFILE: ${{ secrets.NOTARY_KEY != '' && 'ci' || '' }}
+        run: bash Scripts/make-dmg.sh
+
+      - name: Upload the disk image as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinkRouter-dmg
+          path: build/*.dmg
+
+      # Only tags publish. A manual run is for verifying the pipeline, and leaves the artifact above.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UNSIGNED: ${{ secrets.NOTARY_KEY == '' }}
+        run: |
+          notes="Download the disk image, open it, and drag LinkRouter to Applications."
+          if [ "$UNSIGNED" = "true" ]; then
+            notes="$notes
+
+          **This build is not notarised.** macOS will refuse to open it with a message about the app
+          being damaged; that means quarantined, not corrupt. To run it anyway:
+
+          \`\`\`sh
+          xattr -d com.apple.quarantine /Applications/LinkRouter.app
+          \`\`\`"
+          fi
+          gh release create "${GITHUB_REF_NAME}" build/*.dmg \
+            --title "LinkRouter ${GITHUB_REF_NAME}" \
+            --notes "$notes"
